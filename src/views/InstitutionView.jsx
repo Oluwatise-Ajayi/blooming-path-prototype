@@ -299,8 +299,32 @@ export default function InstitutionView() {
       </nav>
 
       {/* Main Content Canvas (Positioned with ml-64 and mt-[80px] offset) */}
-      <main className="flex-1 ml-0 md:ml-64 mt-[80px] h-[calc(100vh-80px)] overflow-y-auto p-6 md:p-8 bg-background pb-24">
+      <main className="flex-1 ml-0 md:ml-64 mt-[80px] h-[calc(100vh-80px)] overflow-y-auto p-4 sm:p-6 md:p-8 bg-background pb-24">
         
+        {/* Mobile Navigation Horizontal Tab Bar */}
+        <div className="md:hidden flex items-center gap-1.5 overflow-x-auto pb-2 mb-4 border-b border-outline-variant scrollbar-none">
+          {[
+            { id: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
+            { id: 'programmes', label: 'Programmes', icon: 'auto_stories' },
+            { id: 'individuals', label: 'Individuals', icon: 'group' },
+            { id: 'analytics', label: 'Analytics', icon: 'analytics' },
+            { id: 'reports', label: 'Reports', icon: 'description' },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveNavTab(tab.id)}
+              className={`px-3 py-2 rounded-xl text-xs font-bold whitespace-nowrap flex items-center gap-1.5 transition-all ${
+                activeNavTab === tab.id
+                  ? 'bg-secondary-container text-on-secondary-container shadow-sm'
+                  : 'bg-surface-container-low text-on-surface-variant hover:text-on-surface'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[16px]">{tab.icon}</span>
+              <span>{tab.label}</span>
+            </button>
+          ))}
+        </div>
+
         {/* ================= TAB CONTENT 1: INSTITUTION OVERVIEW DASHBOARD ================= */}
         {activeNavTab === 'dashboard' && (
           <div className="space-y-8 animate-fadeIn">
