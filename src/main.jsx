@@ -1,0 +1,148 @@
+import React, { useState } from 'react';
+import ReactDOM from 'react-dom/client';
+import AuthScreen from './components/AuthScreen';
+import GuidedOnboardingWizard from './components/GuidedOnboardingWizard';
+import AssessorRoleHeader from './components/AssessorRoleHeader';
+import EvidenceTrailModal from './components/EvidenceTrailModal';
+import IndividualView from './views/IndividualView';
+import EmployerView from './views/EmployerView';
+import InstitutionView from './views/InstitutionView';
+import AdminView from './views/AdminView';
+import './index.css';
+
+function App() {
+  // Auth & Session State
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [userEmail, setUserEmail] = useState('');
+  const [activeRole, setActiveRole] = useState('individual'); // 'individual', 'employer', 'institution', 'admin'
+  const [isOnboardingNewUser, setIsOnboardingNewUser] = useState(false);
+
+  // App Settings State
+  const [currentLang, setCurrentLang] = useState('en'); // 'en', 'ar', 'fr'
+  const [apiKey, setApiKey] = useState('');
+
+  // Evidence Trail Modal State
+  const [isEvidenceModalOpen, setIsEvidenceModalOpen] = useState(false);
+  const [modalData, setModalData] = useState({
+    candidateName: '',
+    capabilityName: '',
+    score: '',
+    transcriptSnippet: '',
+  });
+
+  // Handle Login from AuthScreen
+  const handleLoginSuccess = (role, email) => {
+    setActiveRole(role);
+    setUserEmail(email);
+    setIsAuthenticated(true);
+    setIsOnboardingNewUser(false);
+  };
+
+  // Handle New Registration -> Launch Guided Voice Onboarding
+  const handleStartNewOnboarding = (email) => {
+    setUserEmail(email);
+    setIsAuthenticated(true);
+    setIsOnboardingNewUser(true);
+  };
+
+  // Handle Onboarding Completion
+  const handleCompleteOnboarding = (assignedPathwayId) => {
+    setIsOnboardingNewUser(false);
+    setActiveRole('individual');
+  };
+
+  // Logout / Switch Account
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    setUserEmail('');
+    setIsOnboardingNewUser(false);
+  };
+
+  const handleOpenEvidenceTrail = (candidateName, capabilityName, score, transcriptSnippet) => {
+    setModalData({ candidateName, capabilityName, score, transcriptSnippet });
+    setIsEvidenceModalOpen(true);
+  };
+
+  return (
+    <div className="min-h-screen bg-background text-on-background flex flex-col font-sans">
+      
+      {!isAuthenticated ? (
+        /* STAGE 0: AUTHENTICATION SCREEN */
+        <AuthScreen
+          onLoginSuccess={handleLoginSuccess}
+          onStartNewOnboarding={handleStartNewOnboarding}
+        />
+      ) : isOnboardingNewUser ? (
+        /* STAGE 2: GUIDED POST-SIGNUP VOICE ONBOARDING DIAGNOSTIC WIZARD */
+        <GuidedOnboardingWizard
+          userEmail={userEmail}
+          currentLang={currentLang}
+          onCompleteOnboarding={handleCompleteOnboarding}
+        />
+      ) : (
+        /* MAIN PORTAL DASHBOARDS */
+        <>
+          {/* Top Assessor Persistent Header */}
+          <AssessorRoleHeader
+            activeRole={activeRole}
+            setActiveRole={setActiveRole}
+            currentLang={currentLang}
+            setCurrentLang={setCurrentLang}
+            apiKey={apiKey}
+            setApiKey={setApiKey}
+            userEmail={userEmail}
+            onLogout={handleLogout}
+          />
+
+          {/* Main View Router */}
+          <main className="flex-1">
+            {activeRole === 'individual' && (
+              <div className="pt-[85px] pb-16">
+                <IndividualView
+                  currentLang={currentLang}
+                  apiKey={apiKey}
+                  onOpenEvidenceTrail={handleOpenEvidenceTrail}
+                />
+              </div>
+            )}
+
+            {activeRole === 'employer' && (
+              <div className="pt-[85px] pb-16">
+                <EmployerView
+                  onOpenEvidenceTrail={handleOpenEvidenceTrail}
+                />
+              </div>
+            )}
+
+            {activeRole === 'institution' && (
+              <InstitutionView />
+            )}
+
+            {activeRole === 'admin' && (
+              <div className="pt-[85px] pb-16">
+                <AdminView />
+              </div>
+            )}
+          </main>
+
+          {/* Global Explainability & Evidence Trail Modal */}
+          <EvidenceTrailModal
+            isOpen={isEvidenceModalOpen}
+            onClose={() => setIsEvidenceModalOpen(false)}
+            candidateName={modalData.candidateName}
+            capabilityName={modalData.capabilityName}
+            score={modalData.score}
+            transcriptSnippet={modalData.transcriptSnippet}
+          />
+        </>
+      )}
+
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
