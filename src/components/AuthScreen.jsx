@@ -1,344 +1,344 @@
 import React, { useState } from 'react';
 
 export default function AuthScreen({ onLoginSuccess, onStartNewOnboarding }) {
-  const [authMode, setAuthMode] = useState('login'); // 'login' or 'register'
+  const [isRegisterMode, setIsRegisterMode] = useState(true);
   
-  // Login Form State
-  const [email, setEmail] = useState('individual@bloomingpath.com');
-  const [password, setPassword] = useState('password123');
-  const [loginError, setLoginError] = useState('');
-
-  // Register Form State
+  // Register State (Step 1)
+  const [fullName, setFullName] = useState('');
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
-  const [regConfirmPassword, setRegConfirmPassword] = useState('');
-  const [gdprConsent, setGdprConsent] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [regError, setRegError] = useState('');
 
-  // Quick Demo Credentials presets
-  const demoAccounts = [
-    {
-      role: 'individual',
-      email: 'individual@bloomingpath.com',
-      password: 'password123',
-      label: '1. Individual Learner (Amina Hassan)',
-      badge: 'B2C Dashboard & AI Sim',
-      avatarIcon: 'person'
-    },
-    {
-      role: 'employer',
-      email: 'employer@bloomingpath.com',
-      password: 'password123',
-      label: '2. Employer Hiring Manager',
-      badge: 'B2B De-identified Pipeline',
-      avatarIcon: 'work'
-    },
-    {
-      role: 'institution',
-      email: 'institution@bloomingpath.com',
-      password: 'password123',
-      label: '3. Institutional Partner (Council / UKSPF)',
-      badge: 'B2G Reports & Safeguarding',
-      avatarIcon: 'account_balance'
-    },
-    {
-      role: 'admin',
-      email: 'admin@bloomingpath.com',
-      password: 'password123',
-      label: '4. System Administrator',
-      badge: 'Pathway Overrides & Telemetry',
-      avatarIcon: 'admin_panel_settings'
-    }
+  // Login State
+  const [loginRole, setLoginRole] = useState('individual');
+  const [loginEmail, setLoginEmail] = useState('individual@bloomingpath.com');
+  const [loginPassword, setLoginPassword] = useState('password123');
+  const [loginError, setLoginError] = useState('');
+
+  const demoRoles = [
+    { id: 'individual', label: 'Individual Learner', email: 'individual@bloomingpath.com', icon: 'person' },
+    { id: 'employer', label: 'Employer Manager', email: 'employer@bloomingpath.com', icon: 'work' },
+    { id: 'institution', label: 'Institutional Partner', email: 'institution@bloomingpath.com', icon: 'account_balance' },
+    { id: 'admin', label: 'System Administrator', email: 'admin@bloomingpath.com', icon: 'admin_panel_settings' },
   ];
 
-  const handleLoginSubmit = (e) => {
-    e.preventDefault();
-    setLoginError('');
-
-    const account = demoAccounts.find(a => a.email.toLowerCase() === email.toLowerCase());
-    if (account) {
-      onLoginSuccess(account.role, account.email);
-    } else if (email && password) {
-      // Default to individual if custom credentials
-      onLoginSuccess('individual', email);
-    } else {
-      setLoginError('Please enter valid demo credentials.');
+  const handleRoleSelect = (roleId) => {
+    setLoginRole(roleId);
+    const target = demoRoles.find(r => r.id === roleId);
+    if (target) {
+      setLoginEmail(target.email);
     }
-  };
-
-  const handleQuickLogin = (account) => {
-    setEmail(account.email);
-    setPassword(account.password);
-    onLoginSuccess(account.role, account.email);
   };
 
   const handleRegisterSubmit = (e) => {
     e.preventDefault();
     setRegError('');
-
-    if (!gdprConsent) {
-      setRegError('UK GDPR Data Protection consent is required to proceed.');
-      return;
-    }
     if (!regEmail || !regPassword) {
-      setRegError('Please provide an email and password.');
+      setRegError('Please fill in all required fields.');
       return;
     }
-    if (regPassword !== regConfirmPassword) {
-      setRegError('Passwords do not match.');
+    if (regPassword.length < 8) {
+      setRegError('Password must be at least 8 characters.');
       return;
     }
+    // Launch Voice Setup (Step 2)
+    onStartNewOnboarding(regEmail, fullName || 'New User');
+  };
 
-    // Launch Guided Post-Signup Voice Onboarding Diagnostic!
-    onStartNewOnboarding(regEmail);
+  const handleLoginSubmit = (e) => {
+    e.preventDefault();
+    setLoginError('');
+    if (!loginEmail || !loginPassword) {
+      setLoginError('Please provide your email and password.');
+      return;
+    }
+    onLoginSuccess(loginRole, loginEmail);
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col justify-center items-center p-4 relative overflow-hidden">
+    <div className="bg-onboarding-bg text-on-surface font-body-md antialiased min-h-screen flex flex-col items-center w-full relative selection:bg-primary selection:text-on-primary">
       
-      {/* Background Decorative Gradients */}
-      <div className="absolute -top-32 -left-32 w-96 h-96 bg-primary-fixed rounded-full opacity-30 blur-3xl pointer-events-none"></div>
-      <div className="absolute -bottom-32 -right-32 w-96 h-96 bg-secondary-container rounded-full opacity-30 blur-3xl pointer-events-none"></div>
-
-      <div className="max-w-4xl w-full grid grid-cols-1 md:grid-cols-12 gap-8 bg-surface-container-lowest border border-outline-variant rounded-3xl p-6 sm:p-8 shadow-2xl relative z-10">
-        
-        {/* Left Panel: Brand & Demo Banner */}
-        <div className="md:col-span-5 bg-gradient-to-br from-primary via-primary-container to-tertiary p-6 rounded-2xl text-on-primary flex flex-col justify-between relative overflow-hidden">
-          <div className="relative z-10">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-10 h-10 rounded-xl bg-secondary-container text-on-secondary-container flex items-center justify-center font-bold text-xl">
-                <span className="material-symbols-outlined text-[28px]">spa</span>
-              </div>
-              <h1 className="text-2xl font-extrabold tracking-tight">BloomingPath</h1>
-            </div>
-
-            <span className="px-3 py-1 rounded-full bg-secondary-container/20 text-secondary-fixed text-xs font-bold uppercase tracking-wider mb-4 inline-block border border-secondary/40">
-              Assessor Demonstration Mode
-            </span>
-
-            <h2 className="text-xl font-bold mb-3 leading-snug">
-              AI Workforce Readiness & Guided Voice Onboarding
-            </h2>
-
-            <p className="text-xs text-primary-fixed-dim leading-relaxed mb-6">
-              This interactive prototype features role-based access control, voice-first diagnostic onboarding, client-side LLM simulations, and explainable capability rubrics.
-            </p>
-          </div>
-
-          <div className="relative z-10 pt-6 border-t border-primary-fixed-dim/20">
-            <p className="text-[11px] font-semibold text-primary-fixed-dim uppercase tracking-wider mb-2">
-              Quick Demo Access Credentials:
-            </p>
-            <div className="space-y-1.5 text-xs">
-              <p className="flex justify-between text-on-primary font-mono text-[11px]">
-                <span>All Passwords:</span>
-                <strong className="text-secondary-fixed">password123</strong>
-              </p>
-            </div>
-          </div>
+      {/* Progress Stepper (Shown during Registration Step 1) */}
+      {isRegisterMode && (
+        <div className="w-full fixed top-0 left-0 z-50 flex h-1 bg-surface-container-low">
+          <div className="h-full bg-gradient-to-r from-primary to-primary-container w-1/4 transition-all duration-500 ease-out"></div>
+          <div className="h-full bg-outline-variant w-1/4 opacity-30"></div>
+          <div className="h-full bg-outline-variant w-1/4 opacity-30"></div>
+          <div className="h-full bg-outline-variant w-1/4 opacity-30"></div>
         </div>
+      )}
 
-        {/* Right Panel: Login / Register Form */}
-        <div className="md:col-span-7 flex flex-col justify-between">
-          
-          {/* Auth Tab Switcher */}
+      {/* Top App Bar */}
+      <header className="w-full h-16 flex items-center px-mobile-margin pt-4 bg-transparent z-40 fixed top-1 max-w-md mx-auto">
+        <button 
+          aria-label="Go back"
+          onClick={() => setIsRegisterMode(!isRegisterMode)}
+          className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-lowest transition-colors active:scale-95 text-on-surface"
+        >
+          <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 0" }}>arrow_back</span>
+        </button>
+      </header>
+
+      {/* Main Content Canvas */}
+      <main className="w-full max-w-md px-mobile-margin pt-24 pb-8 flex-1 flex flex-col justify-center">
+        
+        {isRegisterMode ? (
+          /* ================= REGISTER VIEW (STEP 1 OF 4) ================= */
           <div>
-            <div className="flex items-center bg-surface-container-low p-1 rounded-xl border border-outline-variant mb-6">
-              <button
-                type="button"
-                onClick={() => setAuthMode('login')}
-                className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all ${
-                  authMode === 'login'
-                    ? 'bg-surface-container-lowest text-primary shadow-sm'
-                    : 'text-on-surface-variant hover:text-on-surface'
-                }`}
-              >
-                1. Sign In (Existing Roles)
-              </button>
-              <button
-                type="button"
-                onClick={() => setAuthMode('register')}
-                className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all ${
-                  authMode === 'register'
-                    ? 'bg-surface-container-lowest text-primary shadow-sm'
-                    : 'text-on-surface-variant hover:text-on-surface'
-                }`}
-              >
-                2. Register & Voice Onboard
-              </button>
-            </div>
-
-            {/* DEMO NOTICE BANNER */}
-            <div className="p-3 rounded-xl bg-surface-container-low border border-primary-fixed mb-6 flex items-start gap-2.5">
-              <span className="material-symbols-outlined text-primary text-[20px] mt-0.5">info</span>
-              <p className="text-xs text-on-surface-variant">
-                <strong className="text-primary">Assessor Note:</strong> Select any pre-configured demo account below for instant access, or click <strong className="text-on-surface">"Register & Voice Onboard"</strong> to experience the guided 2-stage voice diagnostic!
+            {/* Header Section */}
+            <div className="mb-stack-lg text-center md:text-left">
+              <span className="font-label-sm text-label-sm text-primary uppercase tracking-widest mb-2 block">Step 1 of 4</span>
+              <h1 className="font-onboarding-title text-onboarding-title text-on-surface mb-stack-sm">Create Account</h1>
+              <p className="font-onboarding-body text-onboarding-body text-on-surface-variant">
+                Join our inclusive workforce platform. Your journey to meaningful employment starts here.
               </p>
             </div>
 
-            {/* TAB 1: LOGIN FORM */}
-            {authMode === 'login' ? (
-              <div className="space-y-6">
+            {/* Registration Form Card */}
+            <div className="bg-surface-container-lowest rounded-[24px] p-6 border border-surface-variant shadow-sm mb-stack-md w-full">
+              <form onSubmit={handleRegisterSubmit} className="space-y-stack-md">
                 
-                {/* One-Click Quick Login Buttons */}
-                <div>
-                  <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-2">
-                    One-Click Assessor Persona Logins:
-                  </label>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    {demoAccounts.map((acc) => (
-                      <button
-                        key={acc.role}
-                        type="button"
-                        onClick={() => handleQuickLogin(acc)}
-                        className="p-3 rounded-xl border border-outline-variant bg-surface hover:bg-surface-container-low hover:border-primary text-left transition-all group"
-                      >
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="material-symbols-outlined text-primary text-[18px] group-hover:scale-110 transition-transform">
-                            {acc.avatarIcon}
-                          </span>
-                          <span className="text-xs font-bold text-on-surface group-hover:text-primary transition-colors">
-                            {acc.label}
-                          </span>
-                        </div>
-                        <p className="text-[10px] text-on-surface-variant font-mono">{acc.email}</p>
-                        <span className="inline-block mt-1 text-[10px] font-semibold text-secondary">
-                          {acc.badge}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="relative my-4 text-center">
-                  <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-outline-variant"></div></div>
-                  <span className="relative px-3 bg-surface-container-lowest text-xs text-on-surface-variant font-semibold">
-                    or enter manually
-                  </span>
-                </div>
-
-                <form onSubmit={handleLoginSubmit} className="space-y-4">
-                  {loginError && (
-                    <div className="p-3 rounded-xl bg-error-container text-on-error-container text-xs font-semibold">
-                      {loginError}
-                    </div>
-                  )}
-
-                  <div>
-                    <label className="block text-xs font-semibold text-on-surface mb-1">Email Address</label>
-                    <input
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="e.g. individual@bloomingpath.com"
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-outline-variant text-xs text-on-surface focus:border-primary focus:ring-1 focus:ring-primary"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-on-surface mb-1">Password</label>
-                    <input
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="••••••••"
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-outline-variant text-xs text-on-surface focus:border-primary focus:ring-1 focus:ring-primary"
-                    />
-                  </div>
-
-                  <button
-                    type="submit"
-                    className="w-full py-3 rounded-xl bg-primary-container text-on-primary font-bold text-xs hover:bg-primary transition-all shadow-md"
-                  >
-                    Sign In to Portal
-                  </button>
-                </form>
-              </div>
-            ) : (
-              /* TAB 2: MINIMAL SIGNUP FORM (STAGE 1) */
-              <form onSubmit={handleRegisterSubmit} className="space-y-4">
-                <div className="p-3.5 rounded-xl bg-secondary-container/20 border border-secondary text-xs text-on-surface">
-                  <p className="font-bold text-secondary flex items-center gap-1">
-                    <span className="material-symbols-outlined text-[18px]">graphic_eq</span>
-                    Stage 1: Low-Barrier Registration
-                  </p>
-                  <p className="text-[11px] text-on-surface-variant mt-0.5">
-                    Minimal fields to prevent digital fatigue. Clicking register launches Stage 2 (Guided Voice Diagnostic).
-                  </p>
-                </div>
-
                 {regError && (
                   <div className="p-3 rounded-xl bg-error-container text-on-error-container text-xs font-semibold">
                     {regError}
                   </div>
                 )}
 
-                <div>
-                  <label className="block text-xs font-semibold text-on-surface mb-1">Email Address</label>
-                  <input
-                    type="email"
-                    value={regEmail}
-                    onChange={(e) => setRegEmail(e.target.value)}
-                    placeholder="newlearner@bloomingpath.com"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-outline-variant text-xs text-on-surface focus:border-primary focus:ring-1 focus:ring-primary"
-                  />
+                {/* Full Name Field */}
+                <div className="space-y-1">
+                  <label className="block font-label-sm text-label-sm text-on-surface-variant" htmlFor="fullName">Full Name</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-outline">
+                      <span className="material-symbols-outlined text-[20px]">person</span>
+                    </div>
+                    <input 
+                      id="fullName" 
+                      name="fullName" 
+                      type="text"
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      placeholder="Jane Doe" 
+                      className="glass-input block w-full pl-12 pr-4 h-[56px] rounded-lg border-outline-variant focus:border-primary focus:ring-1 focus:ring-primary text-[16px] text-on-surface placeholder-outline transition-colors bg-surface-container-low" 
+                    />
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-on-surface mb-1">Password</label>
-                    <input
-                      type="password"
+                {/* Email Field */}
+                <div className="space-y-1">
+                  <label className="block font-label-sm text-label-sm text-on-surface-variant" htmlFor="email">Email Address</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-outline">
+                      <span className="material-symbols-outlined text-[20px]">mail</span>
+                    </div>
+                    <input 
+                      id="email" 
+                      name="email" 
+                      type="email" 
+                      required
+                      value={regEmail}
+                      onChange={(e) => setRegEmail(e.target.value)}
+                      placeholder="jane@example.com" 
+                      className="glass-input block w-full pl-12 pr-4 h-[56px] rounded-lg border-outline-variant focus:border-primary focus:ring-1 focus:ring-primary text-[16px] text-on-surface placeholder-outline transition-colors bg-surface-container-low" 
+                    />
+                  </div>
+                </div>
+
+                {/* Password Field */}
+                <div className="space-y-1">
+                  <label className="block font-label-sm text-label-sm text-on-surface-variant" htmlFor="password">Password</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-outline">
+                      <span className="material-symbols-outlined text-[20px]">lock</span>
+                    </div>
+                    <input 
+                      id="password" 
+                      name="password" 
+                      type={showPassword ? 'text' : 'password'}
+                      required
                       value={regPassword}
                       onChange={(e) => setRegPassword(e.target.value)}
-                      placeholder="••••••••"
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-outline-variant text-xs text-on-surface focus:border-primary focus:ring-1 focus:ring-primary"
+                      placeholder="••••••••" 
+                      className="glass-input block w-full pl-12 pr-12 h-[56px] rounded-lg border-outline-variant focus:border-primary focus:ring-1 focus:ring-primary text-[16px] text-on-surface placeholder-outline transition-colors bg-surface-container-low" 
                     />
+                    <button 
+                      type="button"
+                      aria-label="Toggle password visibility"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute inset-y-0 right-0 pr-4 flex items-center text-outline hover:text-primary transition-colors focus:outline-none"
+                    >
+                      <span className="material-symbols-outlined text-[20px]">
+                        {showPassword ? 'visibility_off' : 'visibility'}
+                      </span>
+                    </button>
                   </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-on-surface mb-1">Confirm Password</label>
-                    <input
-                      type="password"
-                      value={regConfirmPassword}
-                      onChange={(e) => setRegConfirmPassword(e.target.value)}
-                      placeholder="••••••••"
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-outline-variant text-xs text-on-surface focus:border-primary focus:ring-1 focus:ring-primary"
-                    />
-                  </div>
+                  <p className="font-label-sm text-label-sm text-outline pt-1">Must be at least 8 characters.</p>
                 </div>
 
-                {/* Mandatory UK GDPR Consent Checkbox */}
-                <div className="p-3 rounded-xl bg-surface border border-outline-variant flex items-start gap-3">
-                  <input
-                    type="checkbox"
-                    id="gdpr"
-                    checked={gdprConsent}
-                    onChange={(e) => setGdprConsent(e.target.checked)}
-                    className="mt-0.5 rounded border-outline text-primary focus:ring-primary"
-                  />
-                  <label htmlFor="gdpr" className="text-[11px] text-on-surface-variant cursor-pointer leading-tight">
-                    <strong className="text-on-surface">Mandatory Compliance Checkbox:</strong> I explicitly consent to the Terms of Use and Privacy Policy in compliance with UK GDPR and ethical AI data processing guidelines.
-                  </label>
-                </div>
-
-                <button
+                {/* Primary Action Button */}
+                <button 
                   type="submit"
-                  className="w-full py-3.5 rounded-xl bg-secondary text-on-secondary font-bold text-xs hover:bg-secondary/90 transition-all shadow-md flex items-center justify-center gap-2"
+                  className="w-full h-[56px] bg-primary text-on-primary rounded-[12px] font-label-sm text-label-sm uppercase tracking-wider flex items-center justify-center gap-2 btn-shadow hover:bg-primary-container transition-all active:scale-[0.98] mt-6"
                 >
-                  <span className="material-symbols-outlined text-[20px]">mic</span>
-                  Register & Launch Voice Diagnostic (Stage 2)
+                  <span>Continue</span>
+                  <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
                 </button>
               </form>
-            )}
+            </div>
 
+            {/* Social Login Section */}
+            <div className="w-full space-y-4">
+              <div className="relative flex items-center py-2">
+                <div className="flex-grow border-t border-surface-variant"></div>
+                <span className="flex-shrink-0 mx-4 font-label-sm text-label-sm text-outline-variant uppercase">Or continue with</span>
+                <div className="flex-grow border-t border-surface-variant"></div>
+              </div>
+              <div className="flex gap-4">
+                <button 
+                  type="button"
+                  onClick={() => onStartNewOnboarding('google.user@bloomingpath.com', 'Google User')}
+                  className="flex-1 h-[56px] bg-surface-container-lowest border border-surface-variant rounded-[12px] flex items-center justify-center gap-2 hover:bg-surface-container-low transition-colors active:scale-[0.98] text-on-surface font-body-md text-body-md"
+                >
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"></path>
+                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"></path>
+                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"></path>
+                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"></path>
+                  </svg>
+                  <span>Google</span>
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => onStartNewOnboarding('linkedin.user@bloomingpath.com', 'LinkedIn User')}
+                  className="flex-1 h-[56px] bg-surface-container-lowest border border-surface-variant rounded-[12px] flex items-center justify-center gap-2 hover:bg-surface-container-low transition-colors active:scale-[0.98] text-on-surface font-body-md text-body-md"
+                >
+                  <svg className="w-5 h-5 text-[#0A66C2]" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"></path>
+                  </svg>
+                  <span>LinkedIn</span>
+                </button>
+              </div>
+            </div>
+
+            <p className="text-center font-label-sm text-label-sm text-outline mt-stack-lg">
+              Already have an account?{' '}
+              <button 
+                type="button"
+                onClick={() => setIsRegisterMode(false)}
+                className="text-primary font-bold hover:underline"
+              >
+                Log in
+              </button>
+            </p>
           </div>
+        ) : (
+          /* ================= LOG IN VIEW ================= */
+          <div>
+            {/* Header Section */}
+            <div className="mb-stack-lg text-center md:text-left">
+              <span className="font-label-sm text-label-sm text-primary uppercase tracking-widest mb-2 block">Welcome Back</span>
+              <h1 className="font-onboarding-title text-onboarding-title text-on-surface mb-stack-sm">Sign In</h1>
+              <p className="font-onboarding-body text-onboarding-body text-on-surface-variant">
+                Select your role or enter your credentials to access your dashboard.
+              </p>
+            </div>
 
-          <div className="text-center pt-4 text-[11px] text-on-surface-variant border-t border-outline-variant mt-6">
-            <span>BloomingPath Solutions Limited © 2026 — Verified Assessor Demo Suite</span>
+            {/* Role / Workspace Selector Pill Menu */}
+            <div className="mb-4">
+              <label className="block font-label-sm text-label-sm text-on-surface-variant mb-2">Portal Access Workspace:</label>
+              <div className="grid grid-cols-2 gap-2">
+                {demoRoles.map(role => (
+                  <button
+                    key={role.id}
+                    type="button"
+                    onClick={() => handleRoleSelect(role.id)}
+                    className={`p-2.5 rounded-xl border text-left flex items-center gap-2 transition-all ${
+                      loginRole === role.id 
+                        ? 'border-primary bg-primary-container/10 text-primary font-semibold shadow-sm'
+                        : 'border-surface-variant bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container-low'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[18px]">{role.icon}</span>
+                    <span className="text-xs truncate">{role.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Login Form Card */}
+            <div className="bg-surface-container-lowest rounded-[24px] p-6 border border-surface-variant shadow-sm mb-stack-md w-full">
+              <form onSubmit={handleLoginSubmit} className="space-y-stack-md">
+                
+                {loginError && (
+                  <div className="p-3 rounded-xl bg-error-container text-on-error-container text-xs font-semibold">
+                    {loginError}
+                  </div>
+                )}
+
+                {/* Email Field */}
+                <div className="space-y-1">
+                  <label className="block font-label-sm text-label-sm text-on-surface-variant" htmlFor="loginEmail">Email Address</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-outline">
+                      <span className="material-symbols-outlined text-[20px]">mail</span>
+                    </div>
+                    <input 
+                      id="loginEmail" 
+                      type="email" 
+                      required
+                      value={loginEmail}
+                      onChange={(e) => setLoginEmail(e.target.value)}
+                      placeholder="user@bloomingpath.com" 
+                      className="glass-input block w-full pl-12 pr-4 h-[56px] rounded-lg border-outline-variant focus:border-primary focus:ring-1 focus:ring-primary text-[16px] text-on-surface transition-colors bg-surface-container-low" 
+                    />
+                  </div>
+                </div>
+
+                {/* Password Field */}
+                <div className="space-y-1">
+                  <label className="block font-label-sm text-label-sm text-on-surface-variant" htmlFor="loginPassword">Password</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-outline">
+                      <span className="material-symbols-outlined text-[20px]">lock</span>
+                    </div>
+                    <input 
+                      id="loginPassword" 
+                      type="password" 
+                      required
+                      value={loginPassword}
+                      onChange={(e) => setLoginPassword(e.target.value)}
+                      placeholder="••••••••" 
+                      className="glass-input block w-full pl-12 pr-4 h-[56px] rounded-lg border-outline-variant focus:border-primary focus:ring-1 focus:ring-primary text-[16px] text-on-surface transition-colors bg-surface-container-low" 
+                    />
+                  </div>
+                </div>
+
+                {/* Primary Action Button */}
+                <button 
+                  type="submit"
+                  className="w-full h-[56px] bg-primary text-on-primary rounded-[12px] font-label-sm text-label-sm uppercase tracking-wider flex items-center justify-center gap-2 btn-shadow hover:bg-primary-container transition-all active:scale-[0.98] mt-6"
+                >
+                  <span>Sign In</span>
+                  <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
+                </button>
+              </form>
+            </div>
+
+            <p className="text-center font-label-sm text-label-sm text-outline mt-stack-lg">
+              Don't have an account?{' '}
+              <button 
+                type="button"
+                onClick={() => setIsRegisterMode(true)}
+                className="text-primary font-bold hover:underline"
+              >
+                Create one
+              </button>
+            </p>
           </div>
+        )}
 
-        </div>
-      </div>
+      </main>
+
     </div>
   );
 }

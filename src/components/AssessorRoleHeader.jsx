@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 
-export default function AssessorRoleHeader({ activeRole, currentLang, setCurrentLang, apiKey, setApiKey, userEmail, onLogout, onExportCSV }) {
+export default function AssessorRoleHeader({ activeRole, setActiveRole, currentLang, setCurrentLang, apiKey, setApiKey, userEmail, onLogout }) {
   const [showKeyModal, setShowKeyModal] = useState(false);
   const [keyInput, setKeyInput] = useState(apiKey || '');
   const [searchQuery, setSearchQuery] = useState('');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
 
   const handleSaveKey = (e) => {
     e.preventDefault();
@@ -15,19 +16,26 @@ export default function AssessorRoleHeader({ activeRole, currentLang, setCurrent
   const getRoleBadge = (role) => {
     switch (role) {
       case 'individual':
-        return { label: 'Individual Portal (B2C)', shortLabel: 'B2C Portal', icon: 'person', color: 'bg-secondary-container text-on-secondary-container' };
+        return { label: 'Individual Portal', icon: 'person', color: 'bg-secondary-container text-on-secondary-container' };
       case 'employer':
-        return { label: 'Employer Portal (B2B)', shortLabel: 'B2B Portal', icon: 'work', color: 'bg-primary-container text-on-primary-container border border-primary-fixed-dim/30' };
+        return { label: 'Employer Hub', icon: 'work', color: 'bg-primary-container text-on-primary-container border border-primary-fixed-dim/30' };
       case 'institution':
-        return { label: 'Institutional Portal (B2G)', shortLabel: 'B2G Portal', icon: 'account_balance', color: 'bg-tertiary-fixed text-on-tertiary-fixed' };
+        return { label: 'Institutional Portal', icon: 'account_balance', color: 'bg-tertiary-fixed text-on-tertiary-fixed' };
       case 'admin':
-        return { label: 'System Admin Portal', shortLabel: 'Admin', icon: 'admin_panel_settings', color: 'bg-error-container text-on-error-container' };
+        return { label: 'System Administration', icon: 'admin_panel_settings', color: 'bg-error-container text-on-error-container' };
       default:
-        return { label: 'BloomingPath Portal', shortLabel: 'Portal', icon: 'spa', color: 'bg-secondary-container text-on-secondary-container' };
+        return { label: 'BloomingPath Portal', icon: 'spa', color: 'bg-secondary-container text-on-secondary-container' };
     }
   };
 
   const badge = getRoleBadge(activeRole);
+
+  const portalRoles = [
+    { id: 'individual', label: 'Individual Portal', icon: 'person' },
+    { id: 'employer', label: 'Employer Hub', icon: 'work' },
+    { id: 'institution', label: 'Institutional Portal', icon: 'account_balance' },
+    { id: 'admin', label: 'System Admin', icon: 'admin_panel_settings' },
+  ];
 
   return (
     <>
@@ -37,16 +45,15 @@ export default function AssessorRoleHeader({ activeRole, currentLang, setCurrent
         {/* Main Nav Row */}
         <div className="max-w-[1600px] mx-auto px-3 sm:px-4 h-14 flex items-center justify-between gap-2 sm:gap-3">
           
-          {/* Left Group: Brand Logo + Responsive Portal Badge */}
+          {/* Left Group: Brand Logo + Portal Badge */}
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             <div className="w-8 h-8 rounded-lg bg-secondary-container text-on-secondary-container flex items-center justify-center font-extrabold text-sm shadow-sm shrink-0">
               <span className="material-symbols-outlined text-[20px]">spa</span>
             </div>
             <div className="flex items-center gap-1.5 sm:gap-2">
               <h1 className="font-bold text-base leading-none tracking-tight hidden sm:block">BloomingPath</h1>
-              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${badge.color}`}>
-                <span className="hidden sm:inline">{badge.label}</span>
-                <span className="sm:hidden">{badge.shortLabel}</span>
+              <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider ${badge.color}`}>
+                {badge.label}
               </span>
             </div>
           </div>
@@ -59,13 +66,13 @@ export default function AssessorRoleHeader({ activeRole, currentLang, setCurrent
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search analytics, candidates, records..."
+                placeholder="Search candidates, analytics, records..."
                 className="bg-transparent border-none focus:ring-0 w-full text-xs text-on-primary placeholder:text-primary-fixed-dim/70 outline-none p-0"
               />
             </div>
           )}
 
-          {/* Right Group: Switch Auth (Always Visible) + Desktop Controls / Mobile Hamburger */}
+          {/* Right Group: Desktop Controls & Profile Dropdown */}
           <div className="flex items-center gap-1.5 sm:gap-2">
             
             {/* Desktop-Only Controls */}
@@ -90,50 +97,96 @@ export default function AssessorRoleHeader({ activeRole, currentLang, setCurrent
                 </select>
               </div>
 
-              {/* Gemini Key Button */}
+              {/* AI Assistant Status Button */}
               <button
                 onClick={() => setShowKeyModal(true)}
-                title="Configure Client-Side Gemini API Key"
-                className={`p-1.5 rounded-lg text-xs flex items-center gap-1 border transition-colors ${
+                title="AI Engine Configuration"
+                className={`p-1.5 px-2.5 rounded-lg text-xs flex items-center gap-1.5 border transition-colors ${
                   apiKey
                     ? 'bg-secondary-container/20 border-secondary text-secondary-fixed'
                     : 'bg-primary-container border-primary-fixed-dim/30 text-primary-fixed-dim hover:text-on-primary'
                 }`}
               >
-                <span className="material-symbols-outlined text-[16px]">key</span>
-                <span className="hidden xl:inline text-[11px]">
-                  {apiKey ? 'API Live' : 'Set Key'}
+                <span className="material-symbols-outlined text-[16px]">auto_awesome</span>
+                <span className="hidden xl:inline text-[11px] font-medium">
+                  {apiKey ? 'Live AI Active' : 'AI Options'}
                 </span>
               </button>
+            </div>
 
-              {/* Account Profile Pill with Avatar */}
-              {userEmail && (
-                <div className="flex items-center gap-2 pl-1 border-l border-primary-fixed-dim/20">
-                  <img
-                    src="https://lh3.googleusercontent.com/aida-public/AB6AXuB_IVCqP45JMPuQ9ZpjKI1Y-MOcTI4bqKRW1Bk8naLNg_K-eK-Y2cfqrxIj5ag1VYCkSMUeD-oXkEqH6CdTF4gV-Ut833CNjA1fiXNa86lHPeRxya8eVPm0hfmpCt745O3Bd96ZfMGsIUmwtbebfOCwzQtwd2dcwEPuFzYV_YdxfGwpsM9heKQJ2uSq0j5oa9DFee3nWIOumbs_ioG2gdwSBzhvZETQDzhtYju2UwnoE5qVqIqOskb23A"
-                    alt="User Profile"
-                    className="w-7 h-7 rounded-full object-cover border border-secondary-container"
-                  />
-                  <span className="hidden xl:inline font-mono text-[11px] text-primary-fixed-dim truncate max-w-[130px]">
-                    {userEmail}
-                  </span>
+            {/* Profile Dropdown Menu */}
+            <div className="relative">
+              <button
+                onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
+                className="flex items-center gap-2 p-1 sm:px-2 py-1 rounded-xl bg-primary-container/60 hover:bg-primary-container border border-primary-fixed-dim/20 transition-all text-xs"
+              >
+                <div className="w-7 h-7 rounded-full bg-secondary-container text-on-secondary-container flex items-center justify-center font-bold text-xs shrink-0">
+                  <span className="material-symbols-outlined text-[16px]">{badge.icon}</span>
+                </div>
+                <span className="hidden sm:inline font-medium text-on-primary truncate max-w-[130px]">
+                  {userEmail || 'Account'}
+                </span>
+                <span className="material-symbols-outlined text-[16px] text-primary-fixed-dim">arrow_drop_down</span>
+              </button>
+
+              {/* Profile Popover Menu */}
+              {isProfileMenuOpen && (
+                <div className="absolute right-0 mt-2 w-56 bg-surface-container-lowest border border-outline-variant rounded-2xl shadow-xl py-2 z-50 text-on-surface">
+                  <div className="px-4 py-2 border-b border-outline-variant/60">
+                    <p className="text-[10px] text-on-surface-variant font-bold uppercase tracking-wider">Signed in as</p>
+                    <p className="text-xs font-semibold truncate text-on-surface">{userEmail || 'user@bloomingpath.com'}</p>
+                  </div>
+
+                  {/* Switch Portal Section */}
+                  <div className="px-2 py-2">
+                    <p className="text-[10px] text-on-surface-variant font-bold uppercase tracking-wider px-2 mb-1">Switch Workspace</p>
+                    {portalRoles.map(r => (
+                      <button
+                        key={r.id}
+                        onClick={() => {
+                          setActiveRole(r.id);
+                          setIsProfileMenuOpen(false);
+                        }}
+                        className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between transition-colors ${
+                          activeRole === r.id ? 'bg-primary-container/10 text-primary font-bold' : 'hover:bg-surface-container-low text-on-surface-variant'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="material-symbols-outlined text-[16px]">{r.icon}</span>
+                          <span>{r.label}</span>
+                        </div>
+                        {activeRole === r.id && <span className="material-symbols-outlined text-xs text-primary">check</span>}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="border-t border-outline-variant/60 pt-1">
+                    <button
+                      onClick={() => {
+                        setShowKeyModal(true);
+                        setIsProfileMenuOpen(false);
+                      }}
+                      className="w-full text-left px-4 py-2 text-xs text-on-surface hover:bg-surface-container-low flex items-center gap-2"
+                    >
+                      <span className="material-symbols-outlined text-[16px] text-primary">key</span>
+                      <span>AI Key Settings</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setIsProfileMenuOpen(false);
+                        if (onLogout) onLogout();
+                      }}
+                      className="w-full text-left px-4 py-2 text-xs text-error hover:bg-error-container/20 flex items-center gap-2 font-medium"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">logout</span>
+                      <span>Sign Out</span>
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
 
-            {/* ALWAYS VISIBLE SWITCH AUTH / LOGOUT BUTTON */}
-            {onLogout && (
-              <button
-                onClick={onLogout}
-                title="Switch Account / Return to Auth Screen"
-                className="px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-lg bg-secondary-container text-on-secondary-container font-bold text-xs hover:bg-secondary transition-all flex items-center gap-1 shadow-sm shrink-0 border border-secondary/40 active:scale-95"
-              >
-                <span className="material-symbols-outlined text-[16px]">logout</span>
-                <span className="text-[11px] whitespace-nowrap">Switch Auth</span>
-              </button>
-            )}
-
-            {/* Mobile Menu Hamburger Button */}
+            {/* Mobile Menu Hamburger */}
             <button
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
               className="p-1.5 rounded-lg text-primary-fixed-dim hover:text-on-primary hover:bg-primary-container transition-colors md:hidden shrink-0"
@@ -143,105 +196,46 @@ export default function AssessorRoleHeader({ activeRole, currentLang, setCurrent
                 {isMobileMenuOpen ? 'close' : 'menu'}
               </span>
             </button>
+
           </div>
 
         </div>
 
-        {/* Mobile Menu Collapsible Drawer */}
+        {/* Mobile Drawer */}
         {isMobileMenuOpen && (
           <div className="md:hidden bg-primary border-t border-primary-fixed-dim/20 px-4 py-3 shadow-xl space-y-3">
-            {/* Search Bar in Mobile Menu (if non-individual) */}
-            {activeRole !== 'individual' && (
-              <div className="flex items-center bg-primary-container/80 rounded-xl px-3 py-2 border border-primary-fixed-dim/20">
-                <span className="material-symbols-outlined text-primary-fixed-dim text-[18px] mr-2">search</span>
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search analytics, candidates, records..."
-                  className="bg-transparent border-none focus:ring-0 w-full text-xs text-on-primary placeholder:text-primary-fixed-dim/70 outline-none p-0"
-                />
-              </div>
-            )}
-
-            {/* Mobile Quick Action Buttons Grid */}
-            <div className="grid grid-cols-2 gap-2">
-              {/* Language Selector */}
-              <div className="flex items-center bg-primary-container/80 px-2.5 py-1.5 rounded-xl border border-primary-fixed-dim/20 text-xs">
-                <span className="material-symbols-outlined text-primary-fixed-dim text-[18px] mr-1.5">language</span>
-                <select
-                  value={currentLang}
-                  onChange={(e) => setCurrentLang(e.target.value)}
-                  className="bg-transparent text-on-primary font-semibold border-none focus:ring-0 text-xs p-0 w-full cursor-pointer"
-                >
-                  <option value="en" className="text-on-surface">English (UK)</option>
-                  <option value="ar" className="text-on-surface">العربية (Arabic)</option>
-                  <option value="fr" className="text-on-surface">Français (French)</option>
-                </select>
-              </div>
-
-              {/* Gemini API Key Config Button */}
-              <button
-                onClick={() => {
-                  setShowKeyModal(true);
-                  setIsMobileMenuOpen(false);
-                }}
-                className={`p-2 rounded-xl text-xs flex items-center justify-center gap-1.5 border transition-colors ${
-                  apiKey
-                    ? 'bg-secondary-container/20 border-secondary text-secondary-fixed font-semibold'
-                    : 'bg-primary-container border-primary-fixed-dim/30 text-primary-fixed-dim hover:text-on-primary'
-                }`}
+            {/* Language Selector */}
+            <div className="flex items-center bg-primary-container/80 px-2.5 py-1.5 rounded-xl border border-primary-fixed-dim/20 text-xs">
+              <span className="material-symbols-outlined text-primary-fixed-dim text-[18px] mr-1.5">language</span>
+              <select
+                value={currentLang}
+                onChange={(e) => setCurrentLang(e.target.value)}
+                className="bg-transparent text-on-primary font-semibold border-none focus:ring-0 text-xs p-0 w-full cursor-pointer"
               >
-                <span className="material-symbols-outlined text-[18px]">key</span>
-                <span className="text-[11px] font-semibold">{apiKey ? 'Gemini Live' : 'Set Gemini Key'}</span>
-              </button>
+                <option value="en" className="text-on-surface">English (UK)</option>
+                <option value="ar" className="text-on-surface">العربية (Arabic)</option>
+                <option value="fr" className="text-on-surface">Français (French)</option>
+              </select>
             </div>
-
-            {/* User Profile & Account Details inside Mobile Drawer */}
-            {userEmail && (
-              <div className="flex items-center justify-between p-2.5 bg-primary-container/50 rounded-xl border border-primary-fixed-dim/20">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <img
-                    src="https://lh3.googleusercontent.com/aida-public/AB6AXuB_IVCqP45JMPuQ9ZpjKI1Y-MOcTI4bqKRW1Bk8naLNg_K-eK-Y2cfqrxIj5ag1VYCkSMUeD-oXkEqH6CdTF4gV-Ut833CNjA1fiXNa86lHPeRxya8eVPm0hfmpCt745O3Bd96ZfMGsIUmwtbebfOCwzQtwd2dcwEPuFzYV_YdxfGwpsM9heKQJ2uSq0j5oa9DFee3nWIOumbs_ioG2gdwSBzhvZETQDzhtYju2UwnoE5qVqIqOskb23A"
-                    alt="User Profile"
-                    className="w-8 h-8 rounded-full object-cover border border-secondary-container shrink-0"
-                  />
-                  <div className="min-w-0">
-                    <p className="text-[10px] text-primary-fixed-dim uppercase tracking-wider font-semibold">Active Session</p>
-                    <p className="font-mono text-xs text-on-primary truncate">{userEmail}</p>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         )}
-
-        {/* Sub-Banner: RBAC Compliance Context Bar */}
-        <div className="bg-primary-container/90 px-3 sm:px-4 py-1 border-t border-primary-fixed-dim/10 text-[11px] text-primary-fixed-dim flex items-center min-h-[24px]">
-          <div className="flex items-center gap-2 max-w-[1600px] mx-auto w-full">
-            <span className="material-symbols-outlined text-[14px] text-secondary-fixed shrink-0">shield</span>
-            <span className="leading-tight text-[10px] sm:text-[11px] truncate sm:whitespace-normal">
-              <strong>RBAC Active:</strong> Scoped to <strong className="text-on-primary">{userEmail || activeRole}</strong>. Tap <strong>"Switch Auth"</strong> to change roles.
-            </span>
-          </div>
-        </div>
       </header>
 
-      {/* Gemini API Key Config Modal */}
+      {/* AI Key Settings Modal */}
       {showKeyModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-on-surface/50 backdrop-blur-sm">
           <div className="bg-surface-container-lowest border border-outline-variant rounded-2xl max-w-md w-full p-6 shadow-2xl">
             <div className="flex justify-between items-center pb-3 border-b border-outline-variant mb-4">
               <h3 className="font-bold text-base text-on-surface flex items-center gap-2">
                 <span className="material-symbols-outlined text-primary">key</span>
-                Gemini Client-Side API Key (Optional)
+                AI Engine Key Configuration
               </h3>
               <button onClick={() => setShowKeyModal(false)} className="text-on-surface-variant hover:text-on-surface">
                 <span className="material-symbols-outlined text-[20px]">close</span>
               </button>
             </div>
             <p className="text-xs text-on-surface-variant mb-4">
-              Provide your Gemini API key to run live real-time LLM evaluations during simulations. If left blank, realistic pre-configured heuristic evaluation data is used.
+              Enter a client-side Gemini API key to enable live conversational voice evaluation.
             </p>
             <form onSubmit={handleSaveKey} className="space-y-4">
               <div>

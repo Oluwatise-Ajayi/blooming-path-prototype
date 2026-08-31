@@ -102,7 +102,7 @@ export default function IndividualView({ currentLang, apiKey, onOpenEvidenceTrai
     if (apiKey) {
       try {
         const prompt = `
-          You are an AI workforce assessor for BloomingPath.
+          You are an AI workforce evaluator for BloomingPath.
           Scenario: ${simulationScenario} (Pathway: ${selectedPathway})
           Learner Spoken Response: "${userSpeech}"
           
@@ -630,7 +630,7 @@ export default function IndividualView({ currentLang, apiKey, onOpenEvidenceTrai
                       <span className="material-symbols-outlined text-[20px]">smart_toy</span>
                     </div>
                     <div>
-                      <p className="text-xs font-bold text-tertiary mb-1">AI Assessor Response & Feedback:</p>
+                      <p className="text-xs font-bold text-tertiary mb-1">AI Evaluation & Feedback:</p>
                       <p className="text-xs text-on-surface">{aiResponse.spoken_reply}</p>
                     </div>
                   </div>
@@ -694,7 +694,7 @@ export default function IndividualView({ currentLang, apiKey, onOpenEvidenceTrai
 
                 {aiResponse && (
                   <div className="p-3 rounded-xl bg-secondary-container/20 border border-secondary text-xs text-on-surface animate-fadeIn">
-                    <p className="font-bold text-secondary mb-0.5">Assessor Audit Note:</p>
+                    <p className="font-bold text-secondary mb-0.5">Verification Audit Note:</p>
                     <p>{aiResponse.feedback}</p>
                   </div>
                 )}

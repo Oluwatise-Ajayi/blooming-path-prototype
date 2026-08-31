@@ -1,355 +1,393 @@
 import React, { useState, useEffect } from 'react';
 
-export default function GuidedOnboardingWizard({ userEmail, currentLang, onCompleteOnboarding }) {
-  const [step, setStep] = useState(1);
-  const [diagnosticMode, setDiagnosticMode] = useState('voice'); // 'voice' or 'visual'
-  const [isListening, setIsListening] = useState(false);
+export default function GuidedOnboardingWizard({ userEmail, currentLang, onCompleteOnboarding, onBackToRegister }) {
+  // Wizard steps: 2 = Mic Setup, 3 = Practice Simulation, 4 = Profile Ready
+  const [step, setStep] = useState(2);
 
-  // Data Collected across the 5 steps
-  const [answers, setAnswers] = useState({
-    sectorInterest: 'Healthcare Administration',
-    commConfidence: 'High (Spoken & Written)',
-    availability: 'Part-Time / School Hours',
-    digitalComfort: 'Intermediate (Computers & CRM)',
-    priorExposure: 'Customer Service & Administration',
-  });
+  // STEP 2 STATE (Mic Test)
+  const [micTestState, setMicTestState] = useState('idle'); // 'idle', 'recording', 'success'
 
-  const [assignedPathway, setAssignedPathway] = useState(null);
-  const [aiSpeechRationale, setAiSpeechRationale] = useState('');
+  // STEP 3 STATE (Practice Simulation)
+  const [simState, setSimState] = useState('idle'); // 'idle', 'recording', 'processing', 'success'
+  const [sttText, setSttText] = useState('Listening...');
+  const [sttIsTyping, setSttIsTyping] = useState(false);
 
-  // Questions definitions for TTS and display
-  const questions = [
-    {
-      id: 1,
-      title: "1. Role & Sector Interest",
-      prompt: "Hello! Welcome to BloomingPath. Which target sector are you most interested in supporting?",
-      field: "sectorInterest",
-      options: [
-        { label: "Healthcare Administration", desc: "GP surgery triage, NHS booking protocols", val: "Healthcare Administration" },
-        { label: "School Support (LSA)", desc: "Teaching assistant, classroom support & parent scheduling", val: "School Support (LSA)" },
-        { label: "Admin & Office Support", desc: "Executive calendar scheduling & business logistics", val: "Admin & Office Support" },
-      ]
-    },
-    {
-      id: 2,
-      title: "2. Communication Confidence",
-      prompt: "How confident do you feel with spoken and written workplace communication?",
-      field: "commConfidence",
-      options: [
-        { label: "High Confidence", desc: "Comfortable speaking on phone & writing emails", val: "High Confidence" },
-        { label: "Moderate Confidence", desc: "Prefer structured scripts & guided practice", val: "Moderate Confidence" },
-        { label: "Building Confidence", desc: "Desire voice-assisted practice and learning modules", val: "Building Confidence" },
-      ]
-    },
-    {
-      id: 3,
-      title: "3. Working Availability",
-      prompt: "What is your preferred working schedule or flexibility?",
-      field: "availability",
-      options: [
-        { label: "Full-Time (35+ hrs)", desc: "Standard weekday office or clinic shifts", val: "Full-Time (35+ hrs)" },
-        { label: "Part-Time / Flexible", desc: "Morning/afternoon shifts or hybrid", val: "Part-Time / Flexible" },
-        { label: "School Hours Only", desc: "Term-time schedules tailored for parents", val: "School Hours Only" },
-      ]
-    },
-    {
-      id: 4,
-      title: "4. Digital Comfort Level",
-      prompt: "How familiar are you with digital tools like email, calendars, and computers?",
-      field: "digitalComfort",
-      options: [
-        { label: "Advanced", desc: "Confident with CRM software, Excel & booking tools", val: "Advanced" },
-        { label: "Intermediate", desc: "Familiar with email, smartphones & web apps", val: "Intermediate" },
-        { label: "Basic / Learning", desc: "Prefer simple step-by-step guidance", val: "Basic / Learning" },
-      ]
-    },
-    {
-      id: 5,
-      title: "5. Prior Transferable Experience",
-      prompt: "What transferable work or community experience do you bring from the UK or your home country?",
-      field: "priorExposure",
-      options: [
-        { label: "Customer Care & Admin", desc: "Previous office, clinic, or receptionist experience", val: "Customer Care & Admin" },
-        { label: "Community & Childcare", desc: "Volunteering, teaching, or family care experience", val: "Community & Childcare" },
-        { label: "Retail & Operations", desc: "Customer service, sales, or logistics background", val: "Retail & Operations" },
-      ]
-    }
-  ];
-
-  const currentQ = questions[step - 1];
-
-  // TTS Helper
-  const speakPrompt = (text) => {
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      if (currentLang === 'ar') utterance.lang = 'ar-SA';
-      else if (currentLang === 'fr') utterance.lang = 'fr-FR';
-      else utterance.lang = 'en-GB';
-      window.speechSynthesis.speak(utterance);
-    }
+  // Handle Step 2 Mic Test
+  const handleStartMicTest = () => {
+    if (micTestState !== 'idle') return;
+    setMicTestState('recording');
+    setTimeout(() => {
+      setMicTestState('success');
+    }, 3000);
   };
 
-  // Speak prompt on step change
-  useEffect(() => {
-    if (step <= 5) {
-      speakPrompt(currentQ.prompt);
-    }
-  }, [step]);
+  // Handle Step 3 Mic Recording & Simulation
+  const handleToggleSimRecording = () => {
+    if (simState === 'idle') {
+      setSimState('recording');
+      setSttText('Listening...');
+      setSttIsTyping(false);
 
-  // STT Microphone Handler
-  const handleVoiceRecord = () => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (SpeechRecognition) {
-      const recognition = new SpeechRecognition();
-      recognition.lang = currentLang === 'ar' ? 'ar-SA' : currentLang === 'fr' ? 'fr-FR' : 'en-GB';
-      recognition.onstart = () => setIsListening(true);
-      recognition.onresult = (e) => {
-        const transcript = e.results[0][0].transcript;
-        setAnswers(prev => ({ ...prev, [currentQ.field]: transcript }));
-        setIsListening(false);
-        handleNextStep();
-      };
-      recognition.onerror = () => setIsListening(false);
-      recognition.start();
-    } else {
-      // Demo Speech-to-Text Fallback
-      setIsListening(true);
+      // Auto transition to processing after 3 seconds of recording
       setTimeout(() => {
-        const mockValue = currentQ.options[0].val;
-        setAnswers(prev => ({ ...prev, [currentQ.field]: mockValue }));
-        setIsListening(false);
-        handleNextStep();
-      }, 2000);
+        startProcessingSim();
+      }, 3000);
+    } else if (simState === 'recording') {
+      startProcessingSim();
     }
   };
 
-  const handleSelectOption = (value) => {
-    setAnswers(prev => ({ ...prev, [currentQ.field]: value }));
-    handleNextStep();
-  };
+  const startProcessingSim = () => {
+    setSimState('processing');
+    const targetScript = "Hello, how can I help you today?";
+    setSttIsTyping(true);
 
-  const handleNextStep = () => {
-    if (step < 5) {
-      setStep(step + 1);
-    } else {
-      // Calculate Automated Pathway Assignment Engine
-      runPathwayAssignmentEngine();
-    }
-  };
-
-  const runPathwayAssignmentEngine = () => {
-    let pathway = 'healthcare';
-    let pathwayName = 'Healthcare Administration Readiness';
-
-    if (answers.sectorInterest.includes('School')) {
-      pathway = 'school';
-      pathwayName = 'School Support Readiness (LSA)';
-    } else if (answers.sectorInterest.includes('Office') || answers.sectorInterest.includes('Admin')) {
-      pathway = 'office';
-      pathwayName = 'Admin & Office Support Readiness';
-    }
-
-    const rationale = `Based on your interest in ${answers.sectorInterest} and your ${answers.commConfidence} level, our AI engine has matched you to the ${pathwayName} pathway. Your next step is to launch your first workplace simulation.`;
-
-    setAssignedPathway({ id: pathway, name: pathwayName });
-    setAiSpeechRationale(rationale);
-    setStep(6); // Step 6 = Summary & Assignment Result Screen
-    speakPrompt(rationale);
+    let idx = 0;
+    setSttText('');
+    const typingInterval = setInterval(() => {
+      if (idx < targetScript.length) {
+        setSttText(prev => prev + targetScript.charAt(idx));
+        idx++;
+      } else {
+        clearInterval(typingInterval);
+        setTimeout(() => {
+          setSimState('success');
+        }, 500);
+      }
+    }, 40);
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col justify-center items-center p-4">
-      <div className="max-w-3xl w-full bg-surface-container-lowest border border-outline-variant rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 relative overflow-hidden">
-        
-        {/* Header Bar */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center pb-4 border-b border-outline-variant gap-4">
-          <div>
-            <span className="px-3 py-1 rounded-full bg-secondary-container text-on-secondary-container text-xs font-bold uppercase tracking-wider mb-1 inline-block">
-              Stage 2: Guided Post-Signup Diagnostic
-            </span>
-            <h2 className="text-xl font-bold text-on-surface">Conversational Onboarding Wizard</h2>
-            <p className="text-xs text-on-surface-variant">Account: <strong className="text-on-surface">{userEmail}</strong></p>
+    <div className="bg-onboarding-bg text-on-surface font-onboarding-body antialiased min-h-screen flex flex-col items-center w-full relative selection:bg-primary selection:text-on-primary">
+      
+      {/* ================= STEP 2: MICROPHONE SETUP ================= */}
+      {step === 2 && (
+        <div className="w-full flex-1 flex flex-col max-w-md mx-auto relative min-h-screen">
+          {/* Progress Stepper */}
+          <div className="w-full px-mobile-margin pt-mobile-margin flex gap-2">
+            <div className="h-1 flex-1 bg-primary rounded-full"></div>
+            <div className="h-1 flex-1 bg-primary rounded-full"></div>
+            <div className="h-1 flex-1 bg-outline-variant rounded-full"></div>
+            <div className="h-1 flex-1 bg-outline-variant rounded-full"></div>
+          </div>
+          
+          <div className="px-mobile-margin mt-stack-sm">
+            <span className="font-voice-label text-voice-label text-primary">STEP 2 OF 4</span>
           </div>
 
-          {/* Mode Switcher: Voice vs Visual */}
-          {step <= 5 && (
-            <div className="flex items-center gap-1.5 bg-surface-container-low p-1.5 rounded-xl border border-outline-variant text-xs">
-              <button
-                onClick={() => setDiagnosticMode('voice')}
-                className={`px-3 py-1 rounded-lg font-bold transition-all ${
-                  diagnosticMode === 'voice' ? 'bg-primary text-on-primary shadow-sm' : 'text-on-surface-variant'
-                }`}
-              >
-                Voice-First (TTS/STT)
-              </button>
-              <button
-                onClick={() => setDiagnosticMode('visual')}
-                className={`px-3 py-1 rounded-lg font-bold transition-all ${
-                  diagnosticMode === 'visual' ? 'bg-primary text-on-primary shadow-sm' : 'text-on-surface-variant'
-                }`}
-              >
-                Visual Cards
-              </button>
-            </div>
-          )}
-        </div>
+          {/* Top Navigation */}
+          <header className="flex items-center w-full px-mobile-margin h-16 bg-transparent">
+            <button 
+              onClick={() => onBackToRegister ? onBackToRegister() : setStep(2)}
+              className="w-10 h-10 flex items-center justify-center rounded-full text-on-surface hover:bg-surface-container-low active:scale-95 duration-150 transition-colors"
+            >
+              <span className="material-symbols-outlined">arrow_back</span>
+            </button>
+          </header>
 
-        {/* Step Progress Indicator */}
-        {step <= 5 && (
-          <div className="space-y-2">
-            <div className="flex justify-between text-xs font-bold text-on-surface-variant">
-              <span>Diagnostic Step {step} of 5</span>
-              <span>{Math.round((step / 5) * 100)}% Completed</span>
-            </div>
-            <div className="w-full bg-surface-container-high h-2 rounded-full overflow-hidden">
-              <div className="bg-secondary h-full rounded-full transition-all duration-500" style={{ width: `${(step / 5) * 100}%` }}></div>
-            </div>
-          </div>
-        )}
-
-        {/* STEPS 1-5: CONVERSATIONAL DIAGNOSTIC */}
-        {step <= 5 && (
-          <div className="space-y-6 py-4 animate-fadeIn">
-            
-            {/* Question Title & Prompt */}
-            <div className="p-4 rounded-2xl bg-surface-container-low border border-primary-fixed flex items-start gap-3">
-              <div className="w-10 h-10 rounded-full bg-primary text-on-primary flex items-center justify-center font-bold text-sm shrink-0">
-                AI
+          {/* Main Content */}
+          <main className="flex-1 flex flex-col px-mobile-margin pb-mobile-margin mt-stack-md justify-between">
+            <div className="flex-1 flex flex-col items-center justify-center">
+              
+              {/* Hero Illustration */}
+              <div className="w-48 h-48 mb-stack-lg relative flex items-center justify-center">
+                <div className="absolute inset-0 bg-primary-fixed rounded-full opacity-50"></div>
+                <div className="absolute inset-4 bg-primary-fixed-dim rounded-full opacity-70"></div>
+                <span className="material-symbols-outlined text-[80px] text-primary relative z-10" style={{ fontVariationSettings: "'FILL' 1" }}>mic</span>
               </div>
-              <div className="flex-1">
-                <div className="flex justify-between items-center mb-1">
-                  <h3 className="text-xs font-bold text-primary uppercase tracking-wider">{currentQ.title}</h3>
-                  <button
-                    onClick={() => speakPrompt(currentQ.prompt)}
-                    className="p-1 text-primary hover:bg-surface-container-high rounded-full"
-                    title="Read Prompt Aloud"
+
+              {/* Title & Instructions */}
+              <div className="text-center mb-stack-lg max-w-[320px]">
+                <h1 className="font-onboarding-title text-onboarding-title text-on-surface mb-stack-sm">Let's check your mic</h1>
+                <p className="font-onboarding-body text-onboarding-body text-on-surface-variant">Speak clearly in a quiet environment. We want to make sure you're heard perfectly.</p>
+              </div>
+
+              {/* Glassmorphic Interaction Area */}
+              <div className={`w-full bg-surface-container-lowest/80 backdrop-blur-md border rounded-xl p-6 flex flex-col items-center transition-all duration-300 ${
+                micTestState === 'recording' ? 'ring-2 ring-primary bg-surface-container-low border-primary' :
+                micTestState === 'success' ? 'border-voice-success ring-2 ring-voice-success' : 'border-surface-variant'
+              }`}>
+                
+                {/* Idle State */}
+                {micTestState === 'idle' && (
+                  <div className="flex flex-col items-center w-full">
+                    <button 
+                      onClick={handleStartMicTest}
+                      className="w-20 h-20 bg-primary text-on-primary rounded-full flex items-center justify-center shadow-voice-btn hover:opacity-90 active:scale-95 transition-all mb-4 relative"
+                    >
+                      <span className="material-symbols-outlined text-[32px]">mic</span>
+                    </button>
+                    <span className="font-voice-label text-voice-label text-on-surface-variant">TAP TO TEST</span>
+                  </div>
+                )}
+
+                {/* Active Recording State */}
+                {micTestState === 'recording' && (
+                  <div className="flex flex-col items-center w-full">
+                    <div className="relative w-20 h-20 mb-6 flex items-center justify-center">
+                      <div className="absolute inset-0 bg-voice-recording rounded-full pulse-ring"></div>
+                      <div className="relative w-16 h-16 bg-voice-recording border-4 border-surface-container-lowest rounded-full flex items-center justify-center z-10">
+                        <span className="material-symbols-outlined text-on-error">graphic_eq</span>
+                      </div>
+                    </div>
+                    {/* Waveform Visualizer */}
+                    <div className="flex items-end justify-center h-12 gap-1 mb-4 w-full px-8">
+                      <div className="w-2 bg-primary rounded-t-sm waveform-bar" style={{ height: '40%' }}></div>
+                      <div className="w-2 bg-primary rounded-t-sm waveform-bar" style={{ height: '80%' }}></div>
+                      <div className="w-2 bg-primary rounded-t-sm waveform-bar" style={{ height: '100%' }}></div>
+                      <div className="w-2 bg-primary rounded-t-sm waveform-bar" style={{ height: '60%' }}></div>
+                      <div className="w-2 bg-primary rounded-t-sm waveform-bar" style={{ height: '30%' }}></div>
+                    </div>
+                    <span className="font-voice-label text-voice-label text-primary animate-pulse">LISTENING...</span>
+                  </div>
+                )}
+
+                {/* Success State */}
+                {micTestState === 'success' && (
+                  <div className="flex flex-col items-center w-full">
+                    <div className="w-20 h-20 bg-voice-success text-on-error border-4 border-surface-container-lowest rounded-full flex items-center justify-center shadow-voice-btn mb-4 z-10">
+                      <span className="material-symbols-outlined text-[32px]">check</span>
+                    </div>
+                    <span className="font-voice-label text-voice-label text-voice-success">MIC LOOKS GOOD!</span>
+                  </div>
+                )}
+
+              </div>
+            </div>
+
+            {/* Primary Action Button */}
+            <div className="pt-stack-lg pb-4 mt-auto">
+              <button 
+                disabled={micTestState !== 'success'}
+                onClick={() => setStep(3)}
+                className={`w-full h-14 rounded-md font-body-md text-body-md font-semibold flex items-center justify-center transition-all duration-300 ${
+                  micTestState === 'success' 
+                    ? 'bg-primary text-on-primary shadow-voice-btn hover:opacity-90 active:scale-95 cursor-pointer' 
+                    : 'bg-surface-variant text-on-surface-variant opacity-50 cursor-not-allowed'
+                }`}
+              >
+                Continue
+              </button>
+            </div>
+          </main>
+        </div>
+      )}
+
+      {/* ================= STEP 3: PRACTICE SIMULATION ================= */}
+      {step === 3 && (
+        <div className="w-full flex-1 flex flex-col max-w-md mx-auto relative min-h-screen">
+          {/* Top App Bar */}
+          <header className="flex items-center w-full px-mobile-margin h-16 bg-surface shrink-0 z-10">
+            <button 
+              onClick={() => setStep(2)}
+              className="flex items-center justify-center w-10 h-10 rounded-full hover:bg-surface-container-low transition-colors active:scale-95"
+            >
+              <span className="material-symbols-outlined text-outline">arrow_back</span>
+            </button>
+            <div className="flex-1 text-center pr-10">
+              <span className="font-headline-lg-mobile text-headline-lg-mobile font-bold text-primary">BloomingPath</span>
+            </div>
+          </header>
+
+          {/* Main Content */}
+          <main className="flex-1 flex flex-col px-mobile-margin relative overflow-y-auto pb-32">
+            {/* Progress Stepper */}
+            <div className="w-full flex gap-2 pt-stack-md pb-stack-lg shrink-0">
+              <div className="h-1 flex-1 bg-primary rounded-full"></div>
+              <div className="h-1 flex-1 bg-primary rounded-full"></div>
+              <div className="h-1 flex-1 bg-primary rounded-full shadow-ambient relative overflow-hidden">
+                <div className="absolute inset-0 bg-gradient-to-r from-primary to-inverse-primary opacity-50"></div>
+              </div>
+              <div className="h-1 flex-1 bg-surface-variant rounded-full"></div>
+            </div>
+
+            <div className="flex flex-col flex-1 justify-center max-w-md mx-auto w-full gap-stack-lg">
+              {/* Header Text */}
+              <div className="text-center space-y-stack-sm">
+                <h1 className="font-onboarding-title text-onboarding-title text-on-surface">First Interaction</h1>
+                <p className="font-onboarding-body text-onboarding-body text-on-surface-variant">Let's practice a simple workplace greeting. Tap the mic and read the text below.</p>
+              </div>
+
+              {/* Script Card */}
+              <div className="glass-panel p-6 rounded-[24px] border border-outline-variant/30 text-center relative overflow-hidden shadow-sm mt-stack-md">
+                <div className="absolute top-0 left-0 w-full h-1/2 bg-gradient-to-b from-white/40 to-transparent pointer-events-none"></div>
+                <span className="font-voice-label text-voice-label text-primary uppercase tracking-widest mb-2 block opacity-80">Read aloud</span>
+                <p className="font-headline-lg-mobile text-headline-lg-mobile text-on-surface font-semibold leading-snug">
+                  "Hello, how can I help you today?"
+                </p>
+              </div>
+
+              {/* Voice Interaction Hub */}
+              <div className="flex flex-col items-center justify-center py-stack-lg gap-stack-md relative z-20">
+                <div className="relative w-[120px] h-[120px] flex items-center justify-center">
+                  
+                  {/* Ambient Glow */}
+                  <div className={`absolute inset-0 rounded-full blur-xl transition-all duration-500 ${
+                    simState === 'idle' ? 'bg-voice-glow scale-75 opacity-50' :
+                    simState === 'recording' ? 'bg-voice-recording scale-125 opacity-20' :
+                    simState === 'processing' ? 'bg-voice-processing scale-110 opacity-30' :
+                    'bg-voice-success scale-125 opacity-30'
+                  }`}></div>
+
+                  {/* Main Button */}
+                  <button 
+                    onClick={handleToggleSimRecording}
+                    className={`relative z-10 w-voice-indicator-size h-voice-indicator-size rounded-full flex items-center justify-center shadow-ambient transition-all duration-300 active:scale-95 ${
+                      simState === 'idle' ? 'bg-primary hover:bg-primary-container text-on-primary' :
+                      simState === 'recording' ? 'bg-white is-recording' :
+                      simState === 'processing' ? 'bg-white is-processing' :
+                      'bg-voice-success text-white'
+                    }`}
                   >
-                    <span className="material-symbols-outlined text-[20px]">volume_up</span>
+                    <span className={`material-symbols-outlined text-3xl ${
+                      simState === 'idle' ? 'text-on-primary' :
+                      simState === 'recording' ? 'text-voice-recording' :
+                      simState === 'processing' ? 'text-voice-processing' :
+                      'text-white'
+                    }`} style={{ fontVariationSettings: "'FILL' 1" }}>
+                      {simState === 'idle' ? 'mic' :
+                       simState === 'recording' ? 'mic' :
+                       simState === 'processing' ? 'more_horiz' : 'check'}
+                    </span>
+
+                    {/* State Rings */}
+                    <div className="recording-ring"></div>
+                    <div className="processing-ring"></div>
                   </button>
                 </div>
-                <p className="text-sm font-bold text-on-surface leading-snug">"{currentQ.prompt}"</p>
-              </div>
-            </div>
 
-            {/* VOICE-FIRST INTERACTION */}
-            {diagnosticMode === 'voice' ? (
-              <div className="flex flex-col items-center text-center space-y-5 py-4">
-                <div className="w-20 h-20 rounded-full bg-primary-container/20 border-2 border-primary flex items-center justify-center relative">
-                  {isListening && <div className="absolute inset-0 rounded-full bg-secondary-container/40 animate-ping"></div>}
-                  <span className="material-symbols-outlined text-primary text-[40px]">
-                    {isListening ? 'graphic_eq' : 'mic'}
+                {/* Status Text */}
+                <div className="h-8 flex items-center justify-center">
+                  <span className={`font-voice-label text-voice-label transition-opacity duration-300 ${
+                    simState === 'success' ? 'text-voice-success font-bold' : 'text-on-surface-variant'
+                  }`}>
+                    {simState === 'idle' && 'Tap to start speaking'}
+                    {simState === 'recording' && 'Listening...'}
+                    {simState === 'processing' && 'Processing...'}
+                    {simState === 'success' && 'Great job!'}
                   </span>
                 </div>
+              </div>
 
-                <button
-                  onClick={handleVoiceRecord}
-                  disabled={isListening}
-                  className={`px-8 py-3.5 rounded-2xl font-bold text-xs transition-all shadow-md flex items-center gap-2 ${
-                    isListening ? 'bg-secondary text-on-secondary animate-pulse' : 'bg-primary-container text-on-primary hover:bg-primary'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[20px]">mic</span>
-                  {isListening ? 'Listening & Transcribing...' : 'Tap & Speak Your Answer'}
-                </button>
-
-                <p className="text-xs text-on-surface-variant italic">
-                  Or select a simplified option below if preferred:
+              {/* Real-time Speech-to-Text Preview */}
+              <div className={`min-h-[80px] p-4 rounded-xl bg-surface-container-low border border-surface-variant flex items-center justify-center text-center transition-all duration-500 ${
+                simState === 'idle' ? 'opacity-0 translate-y-4 scale-95' : 'opacity-100 translate-y-0 scale-100'
+              }`}>
+                <p className={`font-body-md text-body-md ${
+                  simState === 'recording' ? 'text-outline italic' : 'text-on-surface font-medium'
+                }`}>
+                  {sttText}
                 </p>
-
-                {/* Quick Option Buttons as Fallback */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full">
-                  {currentQ.options.map((opt, i) => (
-                    <button
-                      key={i}
-                      onClick={() => handleSelectOption(opt.val)}
-                      className="p-3 rounded-xl border border-outline-variant bg-surface hover:bg-surface-container-low text-left transition-all text-xs font-bold text-on-surface hover:border-primary"
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              /* VISUAL MULTIPLE-CHOICE CARDS */
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                {currentQ.options.map((opt, i) => (
-                  <button
-                    key={i}
-                    onClick={() => handleSelectOption(opt.val)}
-                    className="p-4 rounded-2xl border border-outline-variant bg-surface hover:bg-surface-container-low hover:border-primary text-left transition-all group"
-                  >
-                    <div className="w-8 h-8 rounded-lg bg-primary-container/20 text-primary flex items-center justify-center font-bold text-xs mb-2 group-hover:scale-110 transition-transform">
-                      {i + 1}
-                    </div>
-                    <h4 className="text-xs font-bold text-on-surface mb-1">{opt.label}</h4>
-                    <p className="text-[11px] text-on-surface-variant">{opt.desc}</p>
-                  </button>
-                ))}
-              </div>
-            )}
-
-          </div>
-        )}
-
-        {/* STEP 6: AUTOMATED PATHWAY ASSIGNMENT SUMMARY */}
-        {step === 6 && assignedPathway && (
-          <div className="space-y-6 py-4 animate-fadeIn">
-            
-            <div className="p-6 rounded-2xl bg-gradient-to-r from-surface-container-low via-surface-container to-secondary-container/20 border border-secondary text-center space-y-4">
-              <div className="w-16 h-16 rounded-full bg-secondary text-on-secondary flex items-center justify-center mx-auto shadow-md">
-                <span className="material-symbols-outlined text-[36px]">auto_awesome</span>
               </div>
 
-              <div>
-                <span className="px-3 py-1 rounded-full bg-secondary-container text-on-secondary-container text-xs font-extrabold uppercase tracking-wider mb-2 inline-block">
-                  Automated Pathway Engine Result
-                </span>
-                <h3 className="text-xl font-extrabold text-on-surface">
-                  Assigned Pathway: {assignedPathway.name}
-                </h3>
-              </div>
-
-              <div className="p-4 rounded-xl bg-surface-container-lowest border border-outline-variant text-xs text-on-surface text-left">
-                <p className="font-bold text-primary mb-1">AI Assistant Rationale:</p>
-                <p className="italic font-medium">"{aiSpeechRationale}"</p>
-              </div>
-
-              {/* Summary Data Cards */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-left text-xs">
-                <div className="p-2.5 rounded-lg bg-surface border border-outline-variant">
-                  <span className="text-[10px] text-on-surface-variant font-medium">Confidence:</span>
-                  <p className="font-bold text-primary truncate">{answers.commConfidence}</p>
-                </div>
-                <div className="p-2.5 rounded-lg bg-surface border border-outline-variant">
-                  <span className="text-[10px] text-on-surface-variant font-medium">Availability:</span>
-                  <p className="font-bold text-secondary truncate">{answers.availability}</p>
-                </div>
-                <div className="p-2.5 rounded-lg bg-surface border border-outline-variant">
-                  <span className="text-[10px] text-on-surface-variant font-medium">Digital Tools:</span>
-                  <p className="font-bold text-tertiary truncate">{answers.digitalComfort}</p>
-                </div>
-                <div className="p-2.5 rounded-lg bg-surface border border-outline-variant">
-                  <span className="text-[10px] text-on-surface-variant font-medium">Prior Experience:</span>
-                  <p className="font-bold text-on-surface truncate">{answers.priorExposure}</p>
-                </div>
-              </div>
             </div>
+          </main>
 
-            <div className="flex justify-end pt-2">
-              <button
-                onClick={() => onCompleteOnboarding(assignedPathway.id)}
-                className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-primary-container text-on-primary font-bold text-xs hover:bg-primary transition-all shadow-md flex items-center justify-center gap-2"
+          {/* Bottom Actions */}
+          <div className="fixed bottom-0 left-0 w-full p-mobile-margin bg-gradient-to-t from-onboarding-bg via-onboarding-bg to-transparent z-40 pb-6">
+            <div className="max-w-md mx-auto flex flex-col gap-4">
+              <button 
+                disabled={simState !== 'success'}
+                onClick={() => setStep(4)}
+                className={`w-full h-14 rounded-xl font-body-md font-semibold transition-all duration-300 flex items-center justify-center shadow-sm ${
+                  simState === 'success' 
+                    ? 'bg-primary text-on-primary shadow-ambient hover:bg-primary-container active:scale-95 cursor-pointer' 
+                    : 'bg-surface-variant text-on-surface-variant opacity-50 cursor-not-allowed'
+                }`}
               >
-                <span>Enter Individual Readiness Dashboard</span>
-                <span className="material-symbols-outlined text-[20px]">arrow_forward</span>
+                Continue
+              </button>
+              <button 
+                onClick={() => setStep(4)}
+                className="w-full h-12 rounded-xl bg-transparent text-outline font-body-md hover:bg-surface-container-low transition-colors active:scale-95"
+              >
+                Skip for now
               </button>
             </div>
-
           </div>
-        )}
+        </div>
+      )}
 
-      </div>
+      {/* ================= STEP 4: PROFILE READY ================= */}
+      {step === 4 && (
+        <div className="w-full flex-1 flex flex-col max-w-md mx-auto relative min-h-screen items-center justify-center p-mobile-margin">
+          {/* Top AppBar */}
+          <header className="fixed top-0 w-full max-w-md px-mobile-margin h-16 flex items-center justify-between bg-surface z-50">
+            <div className="flex items-center">
+              <button onClick={() => setStep(3)} className="material-symbols-outlined text-outline cursor-pointer">close</button>
+            </div>
+            <div className="font-headline-lg-mobile text-headline-lg-mobile font-bold text-primary">
+              BloomingPath
+            </div>
+            <div className="w-6"></div>
+          </header>
+
+          {/* Progress Stepper (4/4 Complete) */}
+          <div className="fixed top-16 w-full max-w-md px-mobile-margin flex gap-2 z-40">
+            <div className="h-1 flex-1 rounded-full bg-primary transition-all duration-500"></div>
+            <div className="h-1 flex-1 rounded-full bg-primary transition-all duration-500"></div>
+            <div className="h-1 flex-1 rounded-full bg-primary transition-all duration-500"></div>
+            <div className="h-1 flex-1 rounded-full bg-primary transition-all duration-500"></div>
+          </div>
+
+          {/* Main Content */}
+          <main className="w-full mt-24 mb-32 flex flex-col items-center">
+            {/* Success Indicator */}
+            <div className="w-voice-indicator-size h-voice-indicator-size rounded-full bg-voice-success flex items-center justify-center success-pulse mb-stack-lg fade-in-up">
+              <span className="material-symbols-outlined text-on-primary text-4xl" style={{ fontVariationSettings: "'FILL' 1" }}>check</span>
+            </div>
+
+            {/* Text Header */}
+            <div className="text-center mb-stack-lg fade-in-up delay-100">
+              <h1 className="font-onboarding-title text-onboarding-title text-on-surface mb-stack-sm">You're All Set!</h1>
+              <p className="font-onboarding-body text-onboarding-body text-on-surface-variant">Your voice profile has been successfully generated and applied to your account.</p>
+            </div>
+
+            {/* Summary Card */}
+            <div className="glass-card rounded-[24px] p-mobile-margin w-full mb-stack-lg fade-in-up delay-200">
+              <div className="flex items-center gap-3 mb-4 pb-4 border-b border-surface-variant">
+                <span className="material-symbols-outlined text-primary">graphic_eq</span>
+                <div>
+                  <h3 className="font-voice-label text-voice-label text-primary">Communication Level</h3>
+                  <p className="font-body-md text-body-md text-on-surface-variant">Initial Assessment Complete</p>
+                </div>
+              </div>
+              <ul className="space-y-4">
+                <li className="flex items-center gap-3">
+                  <div className="w-6 h-6 rounded-full bg-primary-container flex items-center justify-center">
+                    <span className="material-symbols-outlined text-on-primary-container text-sm">done</span>
+                  </div>
+                  <span className="font-body-md text-body-md text-on-surface">Account Created</span>
+                </li>
+                <li className="flex items-center gap-3">
+                  <div className="w-6 h-6 rounded-full bg-primary-container flex items-center justify-center">
+                    <span className="material-symbols-outlined text-on-primary-container text-sm">done</span>
+                  </div>
+                  <span className="font-body-md text-body-md text-on-surface">Identity Verified</span>
+                </li>
+                <li className="flex items-center gap-3">
+                  <div className="w-6 h-6 rounded-full bg-primary-container flex items-center justify-center">
+                    <span className="material-symbols-outlined text-on-primary-container text-sm">done</span>
+                  </div>
+                  <span className="font-body-md text-body-md text-on-surface">Voice Profile Set Up</span>
+                </li>
+              </ul>
+            </div>
+          </main>
+
+          {/* Bottom Action */}
+          <div className="fixed bottom-0 w-full max-w-md px-mobile-margin pb-mobile-margin bg-gradient-to-t from-onboarding-bg via-onboarding-bg to-transparent pt-8 fade-in-up delay-300 z-50">
+            <button 
+              onClick={() => onCompleteOnboarding('healthcare')}
+              className="w-full h-14 bg-primary text-on-primary rounded-md font-voice-label text-voice-label ambient-shadow flex items-center justify-center gap-2 hover:bg-primary-container transition-colors active:scale-95"
+            >
+              <span>Go to Dashboard</span>
+              <span className="material-symbols-outlined text-sm">arrow_forward</span>
+            </button>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

@@ -67,22 +67,26 @@ function App() {
     <div className="min-h-screen bg-background text-on-background flex flex-col font-sans">
       
       {!isAuthenticated ? (
-        /* STAGE 0: AUTHENTICATION SCREEN */
+        /* AUTHENTICATION SCREEN */
         <AuthScreen
           onLoginSuccess={handleLoginSuccess}
           onStartNewOnboarding={handleStartNewOnboarding}
         />
       ) : isOnboardingNewUser ? (
-        /* STAGE 2: GUIDED POST-SIGNUP VOICE ONBOARDING DIAGNOSTIC WIZARD */
+        /* GUIDED VOICE ONBOARDING WIZARD */
         <GuidedOnboardingWizard
           userEmail={userEmail}
           currentLang={currentLang}
           onCompleteOnboarding={handleCompleteOnboarding}
+          onBackToRegister={() => {
+            setIsAuthenticated(false);
+            setIsOnboardingNewUser(false);
+          }}
         />
       ) : (
         /* MAIN PORTAL DASHBOARDS */
         <>
-          {/* Top Assessor Persistent Header */}
+          {/* Global Application Navigation Header */}
           <AssessorRoleHeader
             activeRole={activeRole}
             setActiveRole={setActiveRole}
