@@ -48,8 +48,8 @@ app.use((req, res, next) => {
 async function startServer() {
   try {
     await seedDatabase();
-    app.listen(PORT, () => {
-      console.log(`BloomingPath Backend API running on http://localhost:${PORT}`);
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`BloomingPath Backend API running on port ${PORT}`);
     });
   } catch (err) {
     console.error('Failed to initialize BloomingPath backend:', err);
