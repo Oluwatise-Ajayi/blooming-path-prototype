@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import AuthScreen from './components/AuthScreen';
 import GuidedOnboardingWizard from './components/GuidedOnboardingWizard';
-import AssessorRoleHeader from './components/AssessorRoleHeader';
+import PlatformHeader from './components/PlatformHeader';
 import EvidenceTrailModal from './components/EvidenceTrailModal';
 import IndividualView from './views/IndividualView';
 import EmployerView from './views/EmployerView';
@@ -13,13 +13,12 @@ import './index.css';
 function App() {
   // Auth & Session State
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [userEmail, setUserEmail] = useState('');
+  const [userEmail, setUserEmail] = useState('amina.hassan@example.com');
   const [activeRole, setActiveRole] = useState('individual'); // 'individual', 'employer', 'institution', 'admin'
   const [isOnboardingNewUser, setIsOnboardingNewUser] = useState(false);
 
   // App Settings State
   const [currentLang, setCurrentLang] = useState('en'); // 'en', 'ar', 'fr'
-  const [apiKey, setApiKey] = useState('');
 
   // Evidence Trail Modal State
   const [isEvidenceModalOpen, setIsEvidenceModalOpen] = useState(false);
@@ -33,14 +32,14 @@ function App() {
   // Handle Login from AuthScreen
   const handleLoginSuccess = (role, email) => {
     setActiveRole(role);
-    setUserEmail(email);
+    setUserEmail(email || 'amina.hassan@example.com');
     setIsAuthenticated(true);
     setIsOnboardingNewUser(false);
   };
 
   // Handle New Registration -> Launch Guided Voice Onboarding
   const handleStartNewOnboarding = (email) => {
-    setUserEmail(email);
+    setUserEmail(email || 'amina.hassan@example.com');
     setIsAuthenticated(true);
     setIsOnboardingNewUser(true);
   };
@@ -87,13 +86,11 @@ function App() {
         /* MAIN PORTAL DASHBOARDS */
         <>
           {/* Global Application Navigation Header */}
-          <AssessorRoleHeader
+          <PlatformHeader
             activeRole={activeRole}
             setActiveRole={setActiveRole}
             currentLang={currentLang}
             setCurrentLang={setCurrentLang}
-            apiKey={apiKey}
-            setApiKey={setApiKey}
             userEmail={userEmail}
             onLogout={handleLogout}
           />
@@ -104,7 +101,6 @@ function App() {
               <div className="pt-[85px] pb-16">
                 <IndividualView
                   currentLang={currentLang}
-                  apiKey={apiKey}
                   onOpenEvidenceTrail={handleOpenEvidenceTrail}
                 />
               </div>
