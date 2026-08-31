@@ -83,10 +83,16 @@ export default function IndividualView({ currentLang, onOpenEvidenceTrail }) {
         setIsRecording(false);
         handleSendTurn(text);
       };
-      recognition.onerror = () => setIsRecording(false);
+      recognition.onerror = (event) => {
+        setIsRecording(false);
+        console.warn('Speech recognition error on mobile/browser:', event.error);
+        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+          alert('Microphone access is blocked. Please ensure you are using HTTPS (https://...) and allow microphone permissions in your phone browser settings, or switch to Text mode.');
+        }
+      };
       recognition.start();
     } else {
-      // Fallback
+      // Fallback for browsers without Web Speech API
       setIsRecording(true);
       setTimeout(() => {
         const fallbackText = "I understand you need 10am, but that slot is currently occupied. I can offer 11:30 instead or check another day for you.";

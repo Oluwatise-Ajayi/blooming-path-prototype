@@ -102,8 +102,11 @@ export default function GuidedOnboardingWizard({ userEmail, currentLang, onCompl
             setVoiceState('TRANSCRIPT');
           }, 400);
         };
-        recognition.onerror = () => {
+        recognition.onerror = (event) => {
           setVoiceState('READY');
+          if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+            alert('Microphone access is blocked. Please ensure you are opening the site via HTTPS (https://...) and allow microphone permissions in your mobile browser settings.');
+          }
         };
         recognition.start();
       } catch (err) {
