@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import IndividualProfileModal from '../components/IndividualProfileModal';
 
-export default function EmployerView({ onOpenEvidenceTrail }) {
+export default function EmployerView({ onOpenEvidenceTrail, onOpenOnboarding }) {
   const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'individuals', 'roles', 'evidence', 'insights', 'organisation'
   const [candidates, setCandidates] = useState([]);
   const [selectedCandidate, setSelectedCandidate] = useState(null);
@@ -68,9 +68,20 @@ export default function EmployerView({ onOpenEvidenceTrail }) {
           ))}
         </div>
 
-        <div className="hidden sm:flex items-center gap-2 text-xs font-bold text-secondary bg-secondary-container/20 px-3 py-1 rounded-full border border-secondary/30">
-          <span className="material-symbols-outlined text-[16px]">lock</span>
-          <span>Privacy Protected Employer View</span>
+        <div className="flex items-center gap-2">
+          {onOpenOnboarding && (
+            <button
+              onClick={onOpenOnboarding}
+              className="flex items-center gap-1.5 text-xs font-bold text-primary bg-primary-container/15 hover:bg-primary-container/25 px-3 py-1.5 rounded-full border border-primary/30 transition-colors"
+            >
+              <span className="material-symbols-outlined text-[16px]">verified</span>
+              <span>Entity Verification Setup</span>
+            </button>
+          )}
+          <div className="hidden sm:flex items-center gap-2 text-xs font-bold text-secondary bg-secondary-container/20 px-3 py-1 rounded-full border border-secondary/30">
+            <span className="material-symbols-outlined text-[16px]">lock</span>
+            <span>Privacy Protected Employer View</span>
+          </div>
         </div>
       </div>
 

@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import AuthScreen from './components/AuthScreen';
 import GuidedOnboardingWizard from './components/GuidedOnboardingWizard';
+import EmployerOnboardingWizard from './components/EmployerOnboardingWizard';
+import InstitutionOnboardingWizard from './components/InstitutionOnboardingWizard';
 import PlatformHeader from './components/PlatformHeader';
 import EvidenceTrailModal from './components/EvidenceTrailModal';
 import IndividualView from './views/IndividualView';
@@ -16,6 +18,7 @@ function App() {
   const [userEmail, setUserEmail] = useState('amina.hassan@example.com');
   const [activeRole, setActiveRole] = useState('individual'); // 'individual', 'employer', 'institution', 'admin'
   const [isOnboardingNewUser, setIsOnboardingNewUser] = useState(false);
+  const [onboardingRole, setOnboardingRole] = useState('individual'); // 'individual', 'employer', 'institution'
 
   // App Settings State
   const [currentLang, setCurrentLang] = useState('en'); // 'en', 'ar', 'fr'
@@ -37,17 +40,30 @@ function App() {
     setIsOnboardingNewUser(false);
   };
 
-  // Handle New Registration -> Launch Guided Voice Onboarding
-  const handleStartNewOnboarding = (email) => {
-    setUserEmail(email || 'amina.hassan@example.com');
+  // Handle New Registration -> Launch appropriate Onboarding
+  const handleStartNewOnboarding = (email, name, role = 'individual') => {
+    setUserEmail(email || 'user@bloomingpath.com');
+    setOnboardingRole(role);
     setIsAuthenticated(true);
     setIsOnboardingNewUser(true);
   };
 
-  // Handle Onboarding Completion
-  const handleCompleteOnboarding = (assignedPathwayId) => {
+  // Handle Onboarding Completion for Individual
+  const handleCompleteIndividualOnboarding = (assignedPathwayId) => {
     setIsOnboardingNewUser(false);
     setActiveRole('individual');
+  };
+
+  // Handle Onboarding Completion for Employer
+  const handleCompleteEmployerOnboarding = (data) => {
+    setIsOnboardingNewUser(false);
+    setActiveRole('employer');
+  };
+
+  // Handle Onboarding Completion for Institution
+  const handleCompleteInstitutionOnboarding = (data) => {
+    setIsOnboardingNewUser(false);
+    setActiveRole('institution');
   };
 
   // Logout / Switch Account
@@ -72,16 +88,36 @@ function App() {
           onStartNewOnboarding={handleStartNewOnboarding}
         />
       ) : isOnboardingNewUser ? (
-        /* GUIDED VOICE ONBOARDING WIZARD */
-        <GuidedOnboardingWizard
-          userEmail={userEmail}
-          currentLang={currentLang}
-          onCompleteOnboarding={handleCompleteOnboarding}
-          onBackToRegister={() => {
-            setIsAuthenticated(false);
-            setIsOnboardingNewUser(false);
-          }}
-        />
+        /* ONBOARDING WIZARDS ROUTED BY ROLE */
+        onboardingRole === 'employer' ? (
+          <EmployerOnboardingWizard
+            userEmail={userEmail}
+            onComplete={handleCompleteEmployerOnboarding}
+            onBack={() => {
+              setIsAuthenticated(false);
+              setIsOnboardingNewUser(false);
+            }}
+          />
+        ) : onboardingRole === 'institution' ? (
+          <InstitutionOnboardingWizard
+            userEmail={userEmail}
+            onComplete={handleCompleteInstitutionOnboarding}
+            onBack={() => {
+              setIsAuthenticated(false);
+              setIsOnboardingNewUser(false);
+            }}
+          />
+        ) : (
+          <GuidedOnboardingWizard
+            userEmail={userEmail}
+            currentLang={currentLang}
+            onCompleteOnboarding={handleCompleteIndividualOnboarding}
+            onBackToRegister={() => {
+              setIsAuthenticated(false);
+              setIsOnboardingNewUser(false);
+            }}
+          />
+        )
       ) : (
         /* MAIN PORTAL DASHBOARDS */
         <>
@@ -111,12 +147,21 @@ function App() {
               <div className="pt-[85px] pb-16">
                 <EmployerView
                   onOpenEvidenceTrail={handleOpenEvidenceTrail}
+                  onOpenOnboarding={() => {
+                    setOnboardingRole('employer');
+                    setIsOnboardingNewUser(true);
+                  }}
                 />
               </div>
             )}
 
             {activeRole === 'institution' && (
-              <InstitutionView />
+              <InstitutionView
+                onOpenOnboarding={() => {
+                  setOnboardingRole('institution');
+                  setIsOnboardingNewUser(true);
+                }}
+              />
             )}
 
             {activeRole === 'admin' && (

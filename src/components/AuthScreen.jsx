@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 
 export default function AuthScreen({ onLoginSuccess, onStartNewOnboarding }) {
   const [isRegisterMode, setIsRegisterMode] = useState(true);
+  const [registerRole, setRegisterRole] = useState('individual'); // 'individual', 'employer', 'institution'
   
   // Register State (Step 1)
   const [fullName, setFullName] = useState('');
@@ -42,8 +43,8 @@ export default function AuthScreen({ onLoginSuccess, onStartNewOnboarding }) {
       setRegError('Password must be at least 8 characters.');
       return;
     }
-    // Launch Voice Setup (Step 2)
-    onStartNewOnboarding(regEmail, fullName || 'New User');
+    // Launch appropriate Onboarding Wizard
+    onStartNewOnboarding(regEmail, fullName || 'New User', registerRole);
   };
 
   const handleLoginSubmit = (e) => {
@@ -104,6 +105,32 @@ export default function AuthScreen({ onLoginSuccess, onStartNewOnboarding }) {
                     {regError}
                   </div>
                 )}
+
+                {/* Account Type Selector */}
+                <div className="space-y-1.5">
+                  <label className="block font-label-sm text-label-sm text-on-surface-variant">I am registering as:</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { id: 'individual', label: 'Individual', icon: 'person' },
+                      { id: 'employer', label: 'Employer', icon: 'work' },
+                      { id: 'institution', label: 'Institution', icon: 'account_balance' },
+                    ].map(type => (
+                      <button
+                        key={type.id}
+                        type="button"
+                        onClick={() => setRegisterRole(type.id)}
+                        className={`py-2 px-1.5 rounded-xl border text-center flex flex-col items-center gap-1 transition-all ${
+                          registerRole === type.id
+                            ? 'border-primary bg-primary-container/10 text-primary font-bold shadow-sm'
+                            : 'border-surface-variant bg-surface-container-low text-on-surface-variant hover:bg-surface-container'
+                        }`}
+                      >
+                        <span className="material-symbols-outlined text-[18px]">{type.icon}</span>
+                        <span className="text-[11px] truncate">{type.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
                 {/* Full Name Field */}
                 <div className="space-y-1">
@@ -196,7 +223,7 @@ export default function AuthScreen({ onLoginSuccess, onStartNewOnboarding }) {
               <div className="flex gap-4">
                 <button 
                   type="button"
-                  onClick={() => onStartNewOnboarding('google.user@bloomingpath.com', 'Google User')}
+                  onClick={() => onStartNewOnboarding('google.user@bloomingpath.com', 'Google User', registerRole)}
                   className="flex-1 h-[56px] bg-surface-container-lowest border border-surface-variant rounded-[12px] flex items-center justify-center gap-2 hover:bg-surface-container-low transition-colors active:scale-[0.98] text-on-surface font-body-md text-body-md"
                 >
                   <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
@@ -209,7 +236,7 @@ export default function AuthScreen({ onLoginSuccess, onStartNewOnboarding }) {
                 </button>
                 <button 
                   type="button"
-                  onClick={() => onStartNewOnboarding('linkedin.user@bloomingpath.com', 'LinkedIn User')}
+                  onClick={() => onStartNewOnboarding('linkedin.user@bloomingpath.com', 'LinkedIn User', registerRole)}
                   className="flex-1 h-[56px] bg-surface-container-lowest border border-surface-variant rounded-[12px] flex items-center justify-center gap-2 hover:bg-surface-container-low transition-colors active:scale-[0.98] text-on-surface font-body-md text-body-md"
                 >
                   <svg className="w-5 h-5 text-[#0A66C2]" fill="currentColor" viewBox="0 0 24 24">

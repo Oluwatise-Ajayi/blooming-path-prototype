@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-export default function InstitutionView() {
+export default function InstitutionView({ onOpenOnboarding }) {
   const [activeNavTab, setActiveNavTab] = useState('dashboard'); // 'dashboard', 'programmes', 'individuals', 'analytics', 'reports'
   const [downloadNotice, setDownloadNotice] = useState(false);
 
@@ -274,8 +274,17 @@ export default function InstitutionView() {
           </button>
         </div>
 
-        {/* Action Button */}
-        <div className="p-4 border-t border-outline-variant">
+        {/* Action Button & Setup */}
+        <div className="p-3 border-t border-outline-variant space-y-2">
+          {onOpenOnboarding && (
+            <button
+              onClick={onOpenOnboarding}
+              className="w-full bg-secondary-container/60 hover:bg-secondary-container text-on-secondary-container text-xs font-bold py-2.5 px-3 rounded-xl transition-all border border-secondary/30 flex items-center justify-center gap-2"
+            >
+              <span className="material-symbols-outlined text-[16px]">assured_workload</span>
+              <span>Governance &amp; Setup</span>
+            </button>
+          )}
           <button
             onClick={() => alert("New Programme Creator Dialog Launched.")}
             className="w-full bg-primary text-on-primary text-xs font-bold py-3 rounded-xl hover:bg-primary/90 transition-all shadow-md flex items-center justify-center gap-2"
