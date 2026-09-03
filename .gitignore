@@ -67,3 +67,8 @@ Desktop.ini
 .cache/
 .eslintcache
 *.tmp
+
+# SQLite Databases
+*.db
+*.sqlite
+*.sqlite3

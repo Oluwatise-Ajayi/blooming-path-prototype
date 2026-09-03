@@ -73,6 +73,7 @@ export default function GuidedOnboardingWizard({ userEmail, currentLang, onCompl
   const [aiFeedback, setAiFeedback] = useState(null);
   const [isFetchingFeedback, setIsFetchingFeedback] = useState(false);
   const [showRedirect, setShowRedirect] = useState(false);
+  const [readyToAdvance, setReadyToAdvance] = useState(false);
 
   // Tentative track shown during onboarding
   const [tentativeTrack, setTentativeTrack] = useState(null);
@@ -102,16 +103,65 @@ export default function GuidedOnboardingWizard({ userEmail, currentLang, onCompl
     if (!SpeechRecognition) setSpeechSupported(false);
   }, [userEmail, currentLang]);
 
-  // ── TTS helper ─────────────────────────────────────────────
-  const speakText = (text) => {
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
+  // ── Best-voice TTS helper ──────────────────────────────────
+  // Returns a Promise that resolves when speech has finished
+  const speakText = (text, onDone) => {
+    if (!('speechSynthesis' in window)) {
+      if (onDone) onDone();
+      return;
+    }
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(text);
+
+    // Pick the best available voice
+    const pickVoice = () => {
+      const voices = window.speechSynthesis.getVoices();
+      const lang = currentLang === 'ar' ? 'ar' : currentLang === 'fr' ? 'fr' : 'en';
+
+      // Priority order of preferred voice name fragments
+      const preferred = [
+        'Google UK English Female',
+        'Google UK English Male',
+        'Microsoft Libby',
+        'Microsoft Sonia',
+        'Microsoft Mia',
+        'Karen',       // macOS
+        'Samantha',    // macOS
+        'Google US English',
+      ];
+
+      for (const name of preferred) {
+        const match = voices.find(v => v.name.includes(name));
+        if (match) return match;
+      }
+      // Fallback: any voice matching the lang
+      return voices.find(v => v.lang.startsWith(lang)) || voices[0] || null;
+    };
+
+    const applyVoiceAndSpeak = () => {
+      const voice = pickVoice();
+      if (voice) utterance.voice = voice;
       utterance.lang = currentLang === 'ar' ? 'ar-SA' : currentLang === 'fr' ? 'fr-FR' : 'en-GB';
-      utterance.rate = 0.95;
+      utterance.rate = 0.88;   // slightly slower = more natural, easier to follow
+      utterance.pitch = 1.05;  // slightly warmer
+      utterance.volume = 1.0;
+      utterance.onend = () => { if (onDone) onDone(); };
+      utterance.onerror = () => { if (onDone) onDone(); };
       window.speechSynthesis.speak(utterance);
+    };
+
+    // Voices may not be loaded yet on first call
+    if (window.speechSynthesis.getVoices().length > 0) {
+      applyVoiceAndSpeak();
+    } else {
+      window.speechSynthesis.onvoiceschanged = () => {
+        window.speechSynthesis.onvoiceschanged = null;
+        applyVoiceAndSpeak();
+      };
     }
   };
+
 
   // ── Start voice recording ─────────────────────────────────
   const startRecording = () => {
@@ -146,26 +196,63 @@ export default function GuidedOnboardingWizard({ userEmail, currentLang, onCompl
     }
   };
 
-  // ── Fetch real-time AI feedback after each answer ──────────
-  const fetchAIFeedback = async (answer) => {
+  // ── Fetch real-time AI feedback and drive progression ──────
+  // Returns true if redirect is needed, false otherwise
+  const fetchAIFeedbackAndAdvance = async (answer, isLastQuestion) => {
     setIsFetchingFeedback(true);
     setAiFeedback(null);
+    let redirectNeeded = false;
+
     try {
       const feedback = await api.getOnboardingFeedback(currentQ.prompt, answer, currentQIndex);
       setAiFeedback(feedback);
+      redirectNeeded = feedback.redirect_needed;
 
       if (feedback.redirect_needed) {
         setShowRedirect(true);
-        speakText("I can see you have big ambitions! BloomingPath supports specific pathways for foreigners in the UK. Let me show you what's available.");
+        speakText("I can see you have big ambitions! BloomingPath supports specific pathways for people in the UK. Let me show you what we can help with.");
+        // Redirect screen stays until user explicitly dismisses it — don't advance
+        return;
+      }
+
+      if (feedback.tentative_track_name) {
+        setTentativeTrack({ id: feedback.tentative_track_id, name: feedback.tentative_track_name });
+      }
+
+      const reactionText = feedback.reaction || 'Thank you! Let\'s continue.';
+
+      if (isLastQuestion) {
+        // Speak reaction, then complete onboarding after TTS finishes
+        speakText(reactionText, async () => {
+          try {
+            const result = await api.completeOnboardingSession(sessionId);
+            setAlignmentResult(result);
+            setAiFeedback(null);
+          } catch (err) {
+            console.error('Failed to complete onboarding:', err);
+          }
+        });
       } else {
-        if (feedback.reaction) speakText(feedback.reaction);
-        if (feedback.tentative_track_name) {
-          setTentativeTrack({ id: feedback.tentative_track_id, name: feedback.tentative_track_name });
-        }
+        // Speak reaction — show Continue button, don't auto-advance until TTS done
+        // We let utterance.onend trigger the advance via state
+        speakText(reactionText, () => {
+          // TTS finished — show the Continue button (readyToAdvance state)
+          setReadyToAdvance(true);
+        });
       }
     } catch (err) {
       console.error('AI feedback error:', err);
-      // Non-blocking — continue even if AI feedback fails
+      // On error: advance normally without AI feedback
+      if (!isLastQuestion) {
+        setReadyToAdvance(true);
+      } else {
+        try {
+          const result = await api.completeOnboardingSession(sessionId);
+          setAlignmentResult(result);
+        } catch (e) {
+          console.error('Failed to complete onboarding after AI error:', e);
+        }
+      }
     } finally {
       setIsFetchingFeedback(false);
     }
@@ -176,11 +263,11 @@ export default function GuidedOnboardingWizard({ userEmail, currentLang, onCompl
     const finalAnswer = answer || transcriptText || textInput;
     if (!finalAnswer || !sessionId || !individual) return;
 
-    // 1. Get real-time AI feedback first (non-blocking for navigation)
-    fetchAIFeedback(finalAnswer);
-
     setIsSubmitting(true);
+    setReadyToAdvance(false);
+
     try {
+      // Record interaction in backend
       await api.recordOnboardingInteraction(
         sessionId, individual.id, inputMode,
         currentQ.prompt, finalAnswer, finalAnswer
@@ -191,27 +278,24 @@ export default function GuidedOnboardingWizard({ userEmail, currentLang, onCompl
       setTranscriptText('');
       setTextInput('');
 
-      if (currentQIndex < QUESTIONS.length - 1) {
-        // Small delay to let AI feedback show before advancing
-        setTimeout(() => {
-          setCurrentQIndex(prev => prev + 1);
-          setAiFeedback(null);
-          setShowRedirect(false);
-        }, aiFeedback?.redirect_needed ? 99999 : 2200); // Hold on redirect screens until dismissed
-      } else {
-        // Final question — complete onboarding
-        setTimeout(async () => {
-          const result = await api.completeOnboardingSession(sessionId);
-          setAlignmentResult(result);
-          setAiFeedback(null);
-          setShowRedirect(false);
-        }, 1800);
-      }
+      const isLastQuestion = currentQIndex >= QUESTIONS.length - 1;
+
+      // Fetch AI feedback — this drives progression when TTS finishes
+      await fetchAIFeedbackAndAdvance(finalAnswer, isLastQuestion);
     } catch (err) {
       console.error('Failed to submit onboarding answer:', err);
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  // ── Advance to next question (called by Continue button) ───
+  const handleAdvance = () => {
+    window.speechSynthesis.cancel(); // Stop any ongoing speech
+    setReadyToAdvance(false);
+    setCurrentQIndex(prev => prev + 1);
+    setAiFeedback(null);
+    setShowRedirect(false);
   };
 
   // ── Dismiss redirect and continue ─────────────────────────
@@ -303,24 +387,50 @@ export default function GuidedOnboardingWizard({ userEmail, currentLang, onCompl
 
             {/* AI Feedback Bubble */}
             {isFetchingFeedback && (
-              <div className="flex items-center gap-2 p-3 rounded-2xl bg-primary-container/20 border border-primary/20 animate-pulse">
-                <span className="material-symbols-outlined text-primary text-[20px]">smart_toy</span>
-                <span className="text-xs text-on-surface-variant">AI is processing your response...</span>
+              <div className="flex items-center gap-3 p-4 rounded-2xl bg-primary-container/20 border border-primary/20">
+                <div className="w-8 h-8 rounded-full bg-primary-container flex items-center justify-center shrink-0 animate-pulse">
+                  <span className="material-symbols-outlined text-primary text-[18px]">smart_toy</span>
+                </div>
+                <div className="space-y-1 flex-1">
+                  <div className="h-3 bg-primary/20 rounded-full w-3/4 animate-pulse" />
+                  <div className="h-3 bg-primary/10 rounded-full w-1/2 animate-pulse" />
+                </div>
               </div>
             )}
             {aiFeedback && !aiFeedback.redirect_needed && !isFetchingFeedback && (
-              <div className="flex items-start gap-3 p-4 rounded-2xl bg-secondary-container/30 border border-secondary/20 animate-fadeIn">
-                <div className="w-8 h-8 rounded-full bg-secondary-container flex items-center justify-center shrink-0">
-                  <span className="material-symbols-outlined text-secondary text-[18px]">smart_toy</span>
+              <div className="space-y-3 animate-fadeIn">
+                <div className="flex items-start gap-3 p-4 rounded-2xl bg-secondary-container/30 border border-secondary/20">
+                  <div className="w-9 h-9 rounded-full bg-secondary-container flex items-center justify-center shrink-0">
+                    <span className="material-symbols-outlined text-secondary text-[20px]">smart_toy</span>
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-[11px] font-bold text-secondary uppercase tracking-wider mb-1">AI Guide</p>
+                    <p className="text-sm text-on-surface leading-relaxed">{aiFeedback.reaction}</p>
+                  </div>
+                  {/* Speaking indicator */}
+                  {!readyToAdvance && (
+                    <div className="flex items-center gap-1 shrink-0 pt-1">
+                      <span className="w-1.5 h-3 bg-secondary/60 rounded-full animate-bounce" style={{animationDelay:'0ms'}} />
+                      <span className="w-1.5 h-4 bg-secondary/80 rounded-full animate-bounce" style={{animationDelay:'100ms'}} />
+                      <span className="w-1.5 h-3 bg-secondary/60 rounded-full animate-bounce" style={{animationDelay:'200ms'}} />
+                    </div>
+                  )}
                 </div>
-                <div>
-                  <p className="text-[11px] font-bold text-secondary uppercase tracking-wider mb-1">AI Guide</p>
-                  <p className="text-sm text-on-surface leading-relaxed">{aiFeedback.reaction}</p>
-                </div>
+                {/* Continue button appears once TTS has finished */}
+                {readyToAdvance && (
+                  <button
+                    onClick={handleAdvance}
+                    className="w-full py-3 rounded-xl bg-primary text-on-primary font-bold text-sm hover:opacity-90 transition-all shadow-md flex items-center justify-center gap-2 animate-fadeIn"
+                  >
+                    <span>Continue to Next Question</span>
+                    <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
+                  </button>
+                )}
               </div>
             )}
 
-            {/* Input Mode Tabs */}
+            {/* Input Mode Tabs — hidden while AI is responding */}
+            {!isFetchingFeedback && !aiFeedback && (
             <div className="flex justify-center border-b border-outline-variant/60 pb-3 gap-2">
               {[
                 { mode: 'speak', icon: 'mic', label: 'Speak' },
@@ -339,9 +449,10 @@ export default function GuidedOnboardingWizard({ userEmail, currentLang, onCompl
                 </button>
               ))}
             </div>
+            )}
 
             {/* ── SPEAK MODE ── */}
-            {inputMode === 'speak' && (
+            {inputMode === 'speak' && !isFetchingFeedback && !aiFeedback && (
               <div className="flex flex-col items-center space-y-4 py-4">
                 {!speechSupported && (
                   <div className="p-3 rounded-xl bg-error-container/20 border border-error/30 text-xs text-error font-medium w-full text-center">
@@ -426,7 +537,7 @@ export default function GuidedOnboardingWizard({ userEmail, currentLang, onCompl
             )}
 
             {/* ── TYPE MODE ── */}
-            {inputMode === 'type' && (
+            {inputMode === 'type' && !isFetchingFeedback && !aiFeedback && (
               <div className="space-y-4 py-2">
                 <textarea
                   value={textInput}
@@ -447,7 +558,7 @@ export default function GuidedOnboardingWizard({ userEmail, currentLang, onCompl
             )}
 
             {/* ── CHOOSE MODE ── */}
-            {inputMode === 'choose' && (
+            {inputMode === 'choose' && !isFetchingFeedback && !aiFeedback && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 py-2">
                 {currentQ.options.map((opt, idx) => (
                   <button

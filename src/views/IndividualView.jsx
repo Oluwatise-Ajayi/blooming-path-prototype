@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../services/api';
 
 // Track metadata for dynamic theming
@@ -24,8 +24,18 @@ export default function IndividualView({ userEmail, currentLang, onOpenEvidenceT
   const [inputText, setInputText] = useState('');
   const [simInputMode, setSimInputMode] = useState('voice'); // 'voice', 'text'
   const [isRecording, setIsRecording] = useState(false);
+  const [isAiThinking, setIsAiThinking] = useState(false);
   const [isEvaluating, setIsEvaluating] = useState(false);
   const [evaluationResult, setEvaluationResult] = useState(null);
+
+  const turnHistoryEndRef = useRef(null);
+
+  // Auto-scroll to bottom of turn history whenever history or AI thinking state changes
+  useEffect(() => {
+    if (turnHistoryEndRef.current) {
+      turnHistoryEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [turnHistory, isAiThinking]);
 
   // Load Individual & Readiness Data on mount
   useEffect(() => {
@@ -135,13 +145,14 @@ export default function IndividualView({ userEmail, currentLang, onOpenEvidenceT
   // Submit Simulation Turn (Individual Turn -> Backend -> AI Response)
   const handleSendTurn = async (userTranscript) => {
     const textToSend = userTranscript || inputText;
-    if (!textToSend || !simSessionId) return;
+    if (!textToSend || !simSessionId || isAiThinking) return;
 
     setInputText('');
 
     // Append Individual Turn locally
     const indTurn = { speaker: 'individual', transcript: textToSend };
     setTurnHistory(prev => [...prev, indTurn]);
+    setIsAiThinking(true);
 
     try {
       const turnResponse = await api.recordSimulationTurn(simSessionId, simTurnNumber, simInputMode, textToSend);
@@ -158,6 +169,8 @@ export default function IndividualView({ userEmail, currentLang, onOpenEvidenceT
       }
     } catch (err) {
       console.error('Failed to process simulation turn:', err);
+    } finally {
+      setIsAiThinking(false);
     }
   };
 
@@ -401,7 +414,7 @@ export default function IndividualView({ userEmail, currentLang, onOpenEvidenceT
             </div>
 
             {/* Turn History Stream */}
-            <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
+            <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 scroll-smooth">
               {turnHistory.map((turn, idx) => (
                 <div
                   key={idx}
@@ -430,6 +443,28 @@ export default function IndividualView({ userEmail, currentLang, onOpenEvidenceT
                   </div>
                 </div>
               ))}
+
+              {/* AI Thinking / Typing Bubble */}
+              {isAiThinking && (
+                <div className="p-4 rounded-2xl border bg-primary-container/10 border-primary/30 mr-8 flex items-center gap-3 animate-fadeIn">
+                  <div className="w-8 h-8 rounded-full bg-primary text-on-primary flex items-center justify-center font-bold text-xs shrink-0 animate-pulse">
+                    <span className="material-symbols-outlined text-[18px]">smart_toy</span>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs font-bold text-primary flex items-center gap-1.5">
+                      Simulated Character
+                      <span className="text-[10px] font-normal text-on-surface-variant italic">(formulating response...)</span>
+                    </p>
+                    <div className="flex items-center gap-1.5 py-1">
+                      <span className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                      <span className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                      <span className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div ref={turnHistoryEndRef} />
             </div>
 
             {/* Input Controls */}
@@ -462,13 +497,31 @@ export default function IndividualView({ userEmail, currentLang, onOpenEvidenceT
                   <div className="flex justify-center py-2">
                     <button
                       onClick={handleStartVoiceRecording}
-                      disabled={isRecording}
-                      className={`px-8 py-3 rounded-2xl font-bold text-xs flex items-center gap-2 shadow-md ${
-                        isRecording ? 'bg-secondary text-on-secondary animate-pulse' : 'bg-primary text-on-primary hover:opacity-90'
+                      disabled={isRecording || isAiThinking}
+                      className={`px-8 py-3 rounded-2xl font-bold text-xs flex items-center gap-2 shadow-md transition-all ${
+                        isAiThinking
+                          ? 'bg-surface-container-high text-on-surface-variant cursor-wait border border-outline-variant'
+                          : isRecording
+                          ? 'bg-secondary text-on-secondary animate-pulse'
+                          : 'bg-primary text-on-primary hover:opacity-90'
                       }`}
                     >
-                      <span className="material-symbols-outlined text-[20px]">mic</span>
-                      {isRecording ? 'Listening & Transcribing...' : 'Record Voice Answer'}
+                      {isAiThinking ? (
+                        <>
+                          <span className="material-symbols-outlined text-[20px] animate-spin">sync</span>
+                          AI is thinking...
+                        </>
+                      ) : isRecording ? (
+                        <>
+                          <span className="material-symbols-outlined text-[20px]">mic</span>
+                          Listening & Transcribing...
+                        </>
+                      ) : (
+                        <>
+                          <span className="material-symbols-outlined text-[20px]">mic</span>
+                          Record Voice Answer
+                        </>
+                      )}
                     </button>
                   </div>
                 ) : (
@@ -476,16 +529,18 @@ export default function IndividualView({ userEmail, currentLang, onOpenEvidenceT
                     <input
                       type="text"
                       value={inputText}
+                      disabled={isAiThinking}
                       onChange={(e) => setInputText(e.target.value)}
-                      placeholder="Type your workplace response..."
-                      className="flex-1 px-4 py-2.5 rounded-xl bg-surface-container-low border border-outline-variant text-xs text-on-surface focus:ring-1 focus:ring-primary outline-none"
+                      placeholder={isAiThinking ? "Waiting for AI response..." : "Type your workplace response..."}
+                      className="flex-1 px-4 py-2.5 rounded-xl bg-surface-container-low border border-outline-variant text-xs text-on-surface focus:ring-1 focus:ring-primary outline-none disabled:opacity-50"
                       onKeyDown={(e) => e.key === 'Enter' && handleSendTurn(inputText)}
                     />
                     <button
                       onClick={() => handleSendTurn(inputText)}
-                      disabled={!inputText.trim()}
-                      className="px-5 py-2.5 rounded-xl bg-primary text-on-primary font-bold text-xs hover:opacity-90 disabled:opacity-50"
+                      disabled={!inputText.trim() || isAiThinking}
+                      className="px-5 py-2.5 rounded-xl bg-primary text-on-primary font-bold text-xs hover:opacity-90 disabled:opacity-50 flex items-center gap-1.5"
                     >
+                      {isAiThinking && <span className="material-symbols-outlined text-[14px] animate-spin">progress_activity</span>}
                       Send
                     </button>
                   </div>
