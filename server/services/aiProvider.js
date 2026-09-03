@@ -3,80 +3,264 @@ dotenv.config();
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const AI_MODE = process.env.AI_MODE || (GEMINI_API_KEY ? 'live' : 'deterministic');
+const GEMINI_MODEL = 'gemini-3.6-flash';
+const GEMINI_BASE_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
+// ============================================================
+// TRACK DEFINITIONS — used in AI prompts
+// ============================================================
+const AVAILABLE_TRACKS = [
+  {
+    id: 'pathway-admin-asst',
+    name: 'Administrative Assistant',
+    keywords: ['admin', 'office', 'secretary', 'receptionist', 'scheduling', 'clerical', 'data entry', 'filing', 'computer', 'typing'],
+    description: 'Office administration, scheduling, emails, customer contact, clerical tasks'
+  },
+  {
+    id: 'pathway-health-support',
+    name: 'Health & Social Care Support',
+    keywords: ['care', 'hospital', 'nurse', 'nhs', 'elderly', 'patient', 'health', 'support worker', 'care home', 'carer', 'social care', 'medical'],
+    description: 'Care assistant, healthcare support worker, NHS porter, care home roles'
+  },
+  {
+    id: 'pathway-retail-customer',
+    name: 'Retail & Customer Service',
+    keywords: ['shop', 'retail', 'supermarket', 'till', 'cashier', 'sales', 'customer service', 'store', 'stock', 'checkout'],
+    description: 'Retail assistant, till operator, stock room, customer-facing service'
+  },
+  {
+    id: 'pathway-hospitality',
+    name: 'Hospitality & Catering Assistant',
+    keywords: ['hotel', 'restaurant', 'waiter', 'waitress', 'kitchen', 'catering', 'food', 'hospitality', 'chef', 'serving', 'bar'],
+    description: 'Hotel front-of-house, restaurant service, kitchen assistant, catering support'
+  },
+  {
+    id: 'pathway-cleaning-fm',
+    name: 'Cleaning & Facilities Management',
+    keywords: ['cleaning', 'cleaner', 'facilities', 'janitor', 'caretaker', 'maintenance', 'building', 'porter', 'housekeeping'],
+    description: 'Commercial cleaning operative, building services, facilities support'
+  }
+];
+
+const OUT_OF_SCOPE_SIGNALS = [
+  'footballer', 'football player', 'soccer', 'athlete', 'professional sport', 'actor', 'actress',
+  'singer', 'musician', 'lawyer', 'solicitor', 'barrister', 'doctor', 'gp', 'surgeon', 'dentist',
+  'engineer', 'software engineer', 'developer', 'architect', 'accountant', 'chartered accountant',
+  'pilot', 'flight attendant', 'teacher', 'professor', 'lecturer', 'scientist', 'researcher'
+];
+
+const TRACKS_SUMMARY = AVAILABLE_TRACKS.map(t => `- ${t.name} (${t.id}): ${t.description}`).join('\n');
+
+// ============================================================
+// LOGGING HELPERS
+// ============================================================
+function logAIRequest(method, promptPreview) {
+  console.log(`[AI REQUEST] method=${method} model=${GEMINI_MODEL} mode=${AI_MODE} prompt_preview="${promptPreview.substring(0, 120).replace(/\n/g, ' ')}..."`);
+}
+
+function logAIResponse(method, status, responsePreview, usage) {
+  const usageStr = usage ? ` tokens_in=${usage.promptTokenCount} tokens_out=${usage.candidatesTokenCount}` : '';
+  console.log(`[AI RESPONSE] method=${method} status=${status}${usageStr} preview="${String(responsePreview).substring(0, 120).replace(/\n/g, ' ')}..."`);
+}
+
+function logAIError(method, err) {
+  console.error(`[AI ERROR] method=${method} error="${err.message}" — falling back to deterministic logic`);
+}
+
+// ============================================================
+// GEMINI CALL HELPER
+// ============================================================
+async function callGemini(method, prompt) {
+  logAIRequest(method, prompt);
+
+  const res = await fetch(`${GEMINI_BASE_URL}?key=${GEMINI_API_KEY}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { responseMimeType: 'application/json' }
+    })
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Gemini API HTTP ${res.status}: ${errText.substring(0, 200)}`);
+  }
+
+  const data = await res.json();
+  const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  const usage = data.usageMetadata;
+
+  if (!responseText) {
+    throw new Error('Gemini returned empty response — no candidates or parts found');
+  }
+
+  logAIResponse(method, 'ok', responseText, usage);
+  return JSON.parse(responseText);
+}
+
+// ============================================================
+// AI PROVIDER CLASS
+// ============================================================
 export class AIProvider {
+
   /**
-   * Extract structured signals from onboarding transcripts
+   * Per-answer AI feedback during onboarding wizard.
+   * Called after each question is answered to give real-time conversational feedback.
+   * Also detects out-of-scope career goals and gently redirects.
+   */
+  async getOnboardingFeedback(questionPrompt, answer, questionIndex) {
+    if (AI_MODE === 'live' && GEMINI_API_KEY) {
+      try {
+        const prompt = `
+You are a warm, encouraging AI career guide for BloomingPath — a UK employment readiness platform that helps foreigners find accessible employment in the UK.
+
+The user is answering onboarding question ${questionIndex + 1}:
+QUESTION: "${questionPrompt}"
+USER'S ANSWER: "${answer}"
+
+The 5 available employment tracks are:
+${TRACKS_SUMMARY}
+
+IMPORTANT RULES:
+1. If the user's answer mentions a career that is OUT OF SCOPE for BloomingPath (e.g. footballer, doctor, lawyer, engineer, teacher, pilot, scientist, accountant, actor, singer), set redirect_needed to true and provide a warm, supportive redirect_message that explains what BloomingPath is for and lists the 5 available tracks.
+2. If the answer is appropriate, give a short, warm, conversational reaction (1-2 sentences) that acknowledges their answer and, if possible, hints at which track might suit them.
+3. The tentative_track should be the most likely track based on the answer so far, or null if unclear.
+4. Keep tone encouraging, human, friendly — not robotic.
+
+Return ONLY valid JSON:
+{
+  "reaction": "short warm AI response to this answer (1-2 sentences)",
+  "tentative_track_id": "pathway-id or null",
+  "tentative_track_name": "track name or null",
+  "redirect_needed": false,
+  "redirect_message": null
+}
+        `.trim();
+
+        const result = await callGemini('getOnboardingFeedback', prompt);
+        return result;
+      } catch (err) {
+        logAIError('getOnboardingFeedback', err);
+      }
+    }
+
+    // Deterministic fallback
+    const lowerAnswer = answer.toLowerCase();
+    const isOutOfScope = OUT_OF_SCOPE_SIGNALS.some(signal => lowerAnswer.includes(signal));
+
+    if (isOutOfScope) {
+      return {
+        reaction: "I can see you have big ambitions! However, BloomingPath focuses on accessible UK employment pathways.",
+        tentative_track_id: null,
+        tentative_track_name: null,
+        redirect_needed: true,
+        redirect_message: `BloomingPath is designed to help foreigners find accessible employment in the UK. We currently support 5 pathways:\n\n${AVAILABLE_TRACKS.map(t => `• ${t.name} — ${t.description}`).join('\n')}\n\nLet's find the best fit for your skills and experience!`
+      };
+    }
+
+    const matchedTrack = AVAILABLE_TRACKS.find(track =>
+      track.keywords.some(kw => lowerAnswer.includes(kw))
+    );
+
+    return {
+      reaction: matchedTrack
+        ? `That's great! Based on what you've said, ${matchedTrack.name} could be a wonderful fit for you. Let me ask a couple more questions to make sure.`
+        : "Thank you for sharing that! Every bit of experience counts. Let's keep going to find your ideal pathway.",
+      tentative_track_id: matchedTrack?.id || null,
+      tentative_track_name: matchedTrack?.name || null,
+      redirect_needed: false,
+      redirect_message: null
+    };
+  }
+
+  /**
+   * Extract structured signals from all onboarding transcripts and assign one of 5 tracks.
    */
   async extractOnboardingSignals(interactions) {
     if (AI_MODE === 'live' && GEMINI_API_KEY) {
       try {
-        const transcriptText = interactions.map((i, idx) => `Q${idx + 1} (${i.prompt}): ${i.transcript}`).join('\n');
+        const transcriptText = interactions.map((i, idx) =>
+          `Q${idx + 1} (${i.prompt}): ${i.transcript}`
+        ).join('\n');
+
         const prompt = `
-          You are an AI workforce intelligence system for BloomingPath.
-          Extract structured profile signals from these onboarding responses:
+You are an AI workforce intelligence system for BloomingPath — a UK employment readiness platform for foreigners seeking accessible employment.
 
-          ${transcriptText}
+Extract structured profile signals from these onboarding responses and assign the most suitable pathway:
 
-          Return ONLY valid JSON matching this schema:
-          {
-            "prior_work_exposure": boolean,
-            "communication_confidence": "high" | "moderate" | "developing",
-            "digital_confidence": "high" | "moderate" | "developing",
-            "preferred_role_area": "administration" | "customer_service" | "operations",
-            "availability": "immediate" | "within_2_weeks" | "flexible",
-            "assigned_pathway": "Administrative Assistant",
-            "pathway_alignment_reasons": [
-              "Matches stated work interests",
-              "Builds on previous exposure",
-              "Aligns with communication strengths",
-              "Digital confidence identified as an area to develop"
-            ]
-          }
-        `;
+${transcriptText}
 
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { responseMimeType: 'application/json' }
-          })
-        });
+The 5 available pathways are:
+${TRACKS_SUMMARY}
 
-        const data = await res.json();
-        if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
-          return JSON.parse(data.candidates[0].content.parts[0].text);
-        }
+IMPORTANT ASSIGNMENT RULES:
+- Assign the pathway that BEST matches the candidate's stated interests, experience, and skills.
+- If the candidate mentioned something out of scope (footballer, doctor, lawyer, etc.), redirect them to the closest available track based on transferable skills.
+- assigned_pathway_id MUST be one of: pathway-admin-asst, pathway-health-support, pathway-retail-customer, pathway-hospitality, pathway-cleaning-fm
+- pathway_alignment_reasons should be 3-4 specific, personalised reasons referencing their actual answers.
+
+Return ONLY valid JSON:
+{
+  "prior_work_exposure": true,
+  "communication_confidence": "high",
+  "digital_confidence": "moderate",
+  "preferred_role_area": "administration",
+  "availability": "immediate",
+  "assigned_pathway_id": "pathway-admin-asst",
+  "assigned_pathway": "Administrative Assistant",
+  "pathway_alignment_reasons": [
+    "Matches stated work interests",
+    "Builds on previous exposure",
+    "Aligns with communication strengths",
+    "Digital confidence identified as an area to develop"
+  ]
+}
+
+Values for communication_confidence and digital_confidence: "high" | "moderate" | "developing"
+Values for availability: "immediate" | "within_2_weeks" | "flexible"
+        `.trim();
+
+        const result = await callGemini('extractOnboardingSignals', prompt);
+        return result;
       } catch (err) {
-        console.warn('Live AI extraction failed, using deterministic fallback:', err.message);
+        logAIError('extractOnboardingSignals', err);
       }
     }
 
-    // Fallback Extraction
+    // Deterministic fallback — keyword-based track assignment
     const combinedText = interactions.map(i => i.transcript || '').join(' ').toLowerCase();
-    const hasPriorWork = combinedText.includes('work') || combinedText.includes('volunteer') || combinedText.includes('office') || combinedText.includes('experience') || combinedText.includes('yes');
+
+    const trackScores = AVAILABLE_TRACKS.map(track => ({
+      track,
+      score: track.keywords.filter(kw => combinedText.includes(kw)).length
+    }));
+    trackScores.sort((a, b) => b.score - a.score);
+    const best = trackScores[0].track;
+
+    const hasPriorWork = combinedText.includes('work') || combinedText.includes('volunteer') || combinedText.includes('experience') || combinedText.includes('yes');
     const isHighComm = combinedText.includes('very confident') || combinedText.includes('confident') || combinedText.includes('good') || combinedText.includes('enjoy');
 
     return {
       prior_work_exposure: hasPriorWork,
       communication_confidence: isHighComm ? 'high' : 'moderate',
       digital_confidence: combinedText.includes('comfortable') ? 'moderate' : 'developing',
-      preferred_role_area: 'administration',
-      availability: combinedText.includes('immediate') || combinedText.includes('now') || combinedText.includes('soon') ? 'immediate' : 'within_2_weeks',
-      assigned_pathway: 'Administrative Assistant',
+      preferred_role_area: best.id.replace('pathway-', '').replace(/-/g, '_'),
+      availability: (combinedText.includes('immediate') || combinedText.includes('now') || combinedText.includes('soon')) ? 'immediate' : 'within_2_weeks',
+      assigned_pathway_id: best.id,
+      assigned_pathway: best.name,
       pathway_alignment_reasons: [
-        'Matches stated work interests in office administration',
-        hasPriorWork ? 'Builds on previous workplace or volunteer exposure' : 'Identified foundational interest in workplace practice',
-        'Aligns with communication confidence signals',
+        `Matches stated interest in ${best.name.toLowerCase()} work`,
+        hasPriorWork ? 'Builds on previous workplace or volunteer exposure' : 'Identified foundational interest in this sector',
+        'Aligns with communication confidence signals from onboarding',
         'Digital confidence identified as key capability area to develop'
       ]
     };
   }
 
   /**
-   * Generate next customer turn in workplace simulation
-   * DYNAMICALLY reacts to candidate input (even nonsense or off-topic)
+   * Generate next customer turn in workplace simulation.
+   * Dynamically reacts to candidate input, uses track-appropriate persona.
    */
   async generateSimulationResponse(simulationContext, turnHistory) {
     const turnCount = turnHistory.filter(t => t.speaker === 'individual').length;
@@ -86,238 +270,160 @@ export class AIProvider {
     if (AI_MODE === 'live' && GEMINI_API_KEY) {
       try {
         const historyText = turnHistory.map(t => `${t.speaker.toUpperCase()}: "${t.transcript}"`).join('\n');
+
         const prompt = `
-          You are acting as simulated caller Michael Brown in an Administrative Assistant scenario.
-          Scenario Context: ${simulationContext}
+You are a realistic simulated character in a UK workplace training scenario.
 
-          Turn History:
-          ${historyText}
+Scenario Context: ${simulationContext}
 
-          Current Turn: ${turnCount} of 3.
+Turn History:
+${historyText}
 
-          CRITICAL ROLEPLAY INSTRUCTIONS FOR MICHAEL BROWN:
-          - Listen and DIRECTLY react to what the receptionist (Individual) just said: "${lastUserText}".
-          - If the Individual said something nonsensical, bizarre, or off-topic (e.g. "I want to sleep", "banana"), react with in-character confusion or concern: "I'm sorry, did you say you want to sleep? I'm calling to reschedule my 11:30 appointment. Can you help me?"
-          - If the Individual mistakenly promised that 10:00 is free (when it's booked), react with relief or ask for confirmation: "Oh fantastic, so 10:00 am is free? Could you please lock that slot in for me?"
-          - If the Individual explained that 10:00 is occupied and offered 11:30 or another time, acknowledge the constraint.
+Current Turn: ${turnCount} of 3.
 
-          Return ONLY valid JSON matching this schema:
-          {
-            "message": "Michael Brown's spoken response",
-            "conversation_state": "customer_confused" | "customer_pressure" | "customer_frustrated" | "customer_satisfied",
-            "expected_capabilities": ["communication", "problem_solving", "professionalism"]
-          }
-        `;
+ROLEPLAY INSTRUCTIONS:
+- You are the CUSTOMER/COLLEAGUE in this scenario (not the trainee).
+- Listen and DIRECTLY react to what the trainee (Individual) just said: "${lastUserText}"
+- If the trainee said something nonsensical, off-topic, or bizarre (e.g. "I want to sleep", "banana"), react with in-character confusion: stay in role but show you don't understand.
+- If the trainee made an error (e.g. promised something unavailable), press gently on that point.
+- If the trainee handled it well, show appropriate satisfaction or proceed naturally.
+- Keep responses concise (1-3 sentences). Stay in character. Be realistic.
 
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { responseMimeType: 'application/json' }
-          })
-        });
+Return ONLY valid JSON:
+{
+  "message": "your spoken response as the simulated character",
+  "conversation_state": "customer_confused | customer_pressure | customer_frustrated | customer_satisfied",
+  "expected_capabilities": ["communication", "problem_solving", "professionalism"]
+}
+        `.trim();
 
-        const data = await res.json();
-        if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
-          return JSON.parse(data.candidates[0].content.parts[0].text);
-        }
+        const result = await callGemini('generateSimulationResponse', prompt);
+        return result;
       } catch (err) {
-        console.warn('Live AI simulation response failed, using dynamic fallback:', err.message);
+        logAIError('generateSimulationResponse', err);
       }
     }
 
-    // Dynamic Fallback Reaction based on user input
+    // Dynamic fallback based on user input
     const lowerInput = lastUserText.toLowerCase();
+    const isNonsense = lowerInput.length < 3 || ['sleep', 'rubbish', 'banana', 'hello', 'ok'].some(w => lowerInput === w);
 
-    if (lowerInput.includes('sleep') || lowerInput.includes('rubbish') || lowerInput.includes('banana') || lowerInput.length < 3) {
+    if (isNonsense) {
       return {
-        message: "I'm sorry... did you say you want to sleep? I'm calling about my appointment today. Can you help me move it?",
-        conversation_state: "customer_confused",
-        expected_capabilities: ["communication", "professionalism"]
+        message: "I'm sorry, I didn't quite catch that. Could you please help me with my request?",
+        conversation_state: 'customer_confused',
+        expected_capabilities: ['communication', 'professionalism']
       };
-    } else if (lowerInput.includes('free') || lowerInput.includes('10:00') || lowerInput.includes('yes')) {
+    } else if (lowerInput.includes('free') || lowerInput.includes('yes') || lowerInput.includes('available')) {
       return {
-        message: "Oh fantastic! So 10:00 am is available? Please confirm that for Michael Brown.",
-        conversation_state: "customer_pressure",
-        expected_capabilities: ["judgement", "attention_to_detail"]
+        message: "Oh wonderful! Could you please confirm that in writing for me? I want to make sure it's locked in.",
+        conversation_state: 'customer_pressure',
+        expected_capabilities: ['judgement', 'attention_to_detail']
       };
     } else if (turnCount === 1) {
       return {
-        message: "I really need 10am because I have another appointment afterwards. Is there any way to squeeze me in?",
-        conversation_state: "customer_pressure",
-        expected_capabilities: ["communication", "problem_solving", "professionalism"]
+        message: "I see, but I really do need this as soon as possible. Is there absolutely no way to make it work?",
+        conversation_state: 'customer_pressure',
+        expected_capabilities: ['communication', 'problem_solving', 'professionalism']
       };
     } else {
       return {
-        message: "Thank you for checking the schedule for me. I appreciate your help.",
-        conversation_state: "customer_satisfied",
-        expected_capabilities: ["communication", "professionalism"]
+        message: "Thank you so much for your help, I appreciate you taking the time to sort this out for me.",
+        conversation_state: 'customer_satisfied',
+        expected_capabilities: ['communication', 'professionalism']
       };
     }
   }
 
   /**
-   * Evaluate complete simulation transcript against 6 rubric dimensions
-   * STRICT evaluation: Nonsense/off-topic responses will fail (developing / insufficient_evidence)
+   * Evaluate complete simulation transcript against 6 rubric dimensions.
    */
   async evaluateSimulation(simulationContext, turnHistory) {
     if (AI_MODE === 'live' && GEMINI_API_KEY) {
       try {
         const transcriptText = turnHistory.map(t => `${t.speaker.toUpperCase()}: "${t.transcript}"`).join('\n');
+
         const prompt = `
-          You are an AI workforce evaluation engine for BloomingPath.
-          Evaluate the Individual's performance in this workplace simulation.
+You are an AI workforce evaluation engine for BloomingPath.
+Evaluate the trainee's (Individual's) performance in this UK workplace simulation.
 
-          Scenario Context:
-          ${simulationContext}
+Scenario Context:
+${simulationContext}
 
-          Transcript:
-          ${transcriptText}
+Transcript:
+${transcriptText}
 
-          Evaluate against 6 rubric dimensions:
-          1. communication: clear, understandable, polite, acknowledges customer constraint
-          2. problem_solving: identifies schedule conflict, proposes practical alternative (e.g. 11:30 or alternative day)
-          3. judgement: does not promise unavailable 10am slot, recognizes when info is required
-          4. professionalism: polite tone under customer pressure
-          5. attention_to_detail: accurately references schedule details (10am occupied, 11:30 available)
-          6. following_instructions: stays within administrative role and uses scenario facts
+Evaluate against 6 rubric dimensions:
+1. communication: clear, understandable, polite, professional
+2. problem_solving: identifies the core issue and proposes a practical resolution
+3. judgement: makes appropriate decisions without overpromising or breaching policy
+4. professionalism: polite tone, stays calm under pressure
+5. attention_to_detail: accurately references scenario facts and constraints
+6. following_instructions: stays within the assigned role and scenario boundaries
 
-          CRITICAL EVALUATION RULES:
-          - Evaluate strictly based on what the Individual ACTUALLY said in the transcript.
-          - If the Individual provided off-topic, nonsensical, or inappropriate responses (e.g., "I want to sleep", "yes 10:00 is free" when 10:00 is occupied), you MUST mark those capabilities as 'developing' or 'insufficient_evidence'.
-          - Calculate overall_signal based on capability results:
-            - 'demonstrated' ONLY if at least 4 out of 6 capabilities are 'demonstrated'.
-            - 'developing' if 2 or 3 capabilities are 'demonstrated' or if responses are partial.
-            - 'insufficient_evidence' if responses are nonsensical, off-topic, or empty.
+CRITICAL EVALUATION RULES:
+- Base your evaluation STRICTLY on what the Individual ACTUALLY said in the transcript.
+- If responses are off-topic, nonsensical, or inappropriate, mark those capabilities as 'developing' or 'insufficient_evidence'.
+- Calculate overall_signal: 'demonstrated' = at least 4/6 demonstrated; 'developing' = 2-3 demonstrated; 'insufficient_evidence' = fewer than 2.
 
-          Assessment States allowed ONLY: "demonstrated", "developing", "insufficient_evidence"
+Allowed assessment values: "demonstrated", "developing", "insufficient_evidence"
 
-          Return valid JSON:
-          {
-            "capabilities": [
-              {
-                "capability": "communication",
-                "assessment": "developing",
-                "evidence": ["Stated 'I want to sleep' during caller interaction"],
-                "rationale": "Response was inappropriate and off-topic for a customer service call.",
-                "confidence": "high"
-              },
-              {
-                "capability": "problem_solving",
-                "assessment": "insufficient_evidence",
-                "evidence": ["Did not attempt to resolve caller schedule request"],
-                "rationale": "Failed to offer alternative appointment times.",
-                "confidence": "high"
-              },
-              {
-                "capability": "judgement",
-                "assessment": "developing",
-                "evidence": ["Told caller 10:00 is free when schedule shows it is occupied"],
-                "rationale": "Incorrectly promised an unavailable appointment slot.",
-                "confidence": "high"
-              },
-              {
-                "capability": "professionalism",
-                "assessment": "developing",
-                "evidence": ["Unprofessional response during caller request"],
-                "rationale": "Did not maintain customer service standards.",
-                "confidence": "high"
-              },
-              {
-                "capability": "attention_to_detail",
-                "assessment": "insufficient_evidence",
-                "evidence": ["Failed to verify existing schedule"],
-                "rationale": "Ignored schedule conflict details.",
-                "confidence": "high"
-              },
-              {
-                "capability": "following_instructions",
-                "assessment": "developing",
-                "evidence": ["Did not follow administrative assistant guidelines"],
-                "rationale": "Deviated from assigned workplace role.",
-                "confidence": "high"
-              }
-            ],
-            "overall_summary": "The Individual provided off-topic and inaccurate responses during the scheduling simulation, requiring further development.",
-            "overall_signal": "developing"
-          }
-        `;
+Return ONLY valid JSON:
+{
+  "capabilities": [
+    {
+      "capability": "communication",
+      "assessment": "demonstrated",
+      "evidence": ["Specific quote or behaviour from transcript"],
+      "rationale": "Why this rating was given",
+      "confidence": "high"
+    }
+  ],
+  "overall_summary": "2-3 sentence summary of performance",
+  "overall_signal": "demonstrated"
+}
+        `.trim();
 
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { responseMimeType: 'application/json' }
-          })
-        });
+        const result = await callGemini('evaluateSimulation', prompt);
 
-        const data = await res.json();
-        if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
-          const parsed = JSON.parse(data.candidates[0].content.parts[0].text);
-          // Recalculate overall_signal strictly
-          const demonstratedCount = parsed.capabilities.filter(c => c.assessment === 'demonstrated').length;
-          parsed.overall_signal = demonstratedCount >= 4 ? 'demonstrated' : demonstratedCount >= 2 ? 'developing' : 'insufficient_evidence';
-          return parsed;
-        }
+        // Recalculate overall_signal server-side to prevent AI hallucination
+        const demonstratedCount = result.capabilities.filter(c => c.assessment === 'demonstrated').length;
+        result.overall_signal = demonstratedCount >= 4 ? 'demonstrated' : demonstratedCount >= 2 ? 'developing' : 'insufficient_evidence';
+        return result;
       } catch (err) {
-        console.warn('Live AI evaluation failed, using deterministic rubric evaluation:', err.message);
+        logAIError('evaluateSimulation', err);
       }
     }
 
-    // Deterministic Rubric Evaluation based on transcript analysis
+    // Deterministic rubric evaluation
     const individualTurns = turnHistory.filter(t => t.speaker === 'individual');
     const fullText = individualTurns.map(t => t.transcript.toLowerCase()).join(' ');
 
-    const isNonsense = fullText.includes('sleep') || fullText.includes('rubbish') || fullText.includes('banana') || fullText.length < 5;
-    const promisesOccupiedSlot = fullText.includes('10:00 is free') || fullText.includes('10 is free') || fullText.includes('yes 10');
+    const isNonsense = fullText.length < 5 || ['sleep', 'rubbish', 'banana'].some(w => fullText.includes(w));
+    const promisesWrong = fullText.includes('10:00 is free') || fullText.includes('10 is free') || fullText.includes('yes 10');
     const acknowledgesConstraint = fullText.includes('11:30') || fullText.includes('booked') || fullText.includes('taken') || fullText.includes('full') || fullText.includes('conflict');
-    const offersAlternative = fullText.includes('11:30') || fullText.includes('alternative') || fullText.includes('another day');
+    const offersAlternative = fullText.includes('11:30') || fullText.includes('alternative') || fullText.includes('another');
     const isPolite = fullText.includes('understand') || fullText.includes('help') || fullText.includes('please') || fullText.includes('thank');
 
-    let commState = 'developing';
-    let probState = 'insufficient_evidence';
-    let judgeState = 'developing';
-    let profState = 'developing';
-    let detailState = 'insufficient_evidence';
-    let followState = 'developing';
+    let comm = 'developing', prob = 'insufficient_evidence', judge = 'developing';
+    let prof = 'developing', detail = 'insufficient_evidence', follow = 'developing';
 
-    let commRationale = "Response lacked clear professional structure.";
-    let probRationale = "Did not resolve scheduling conflict.";
-    let judgeRationale = "Incorrectly promised an occupied time slot or gave off-topic response.";
-
-    if (isNonsense) {
-      commState = 'developing';
-      commRationale = "Off-topic or nonsensical response ('" + fullText + "') expressed during caller dialogue.";
-      probState = 'insufficient_evidence';
-      probRationale = "Failed to provide scheduling assistance.";
-      judgeState = 'developing';
-      judgeRationale = "Unprofessional response given during caller inquiry.";
-    } else if (promisesOccupiedSlot) {
-      commState = 'developing';
-      commRationale = "Promised caller an occupied slot without checking schedule constraints.";
-      judgeState = 'developing';
-      judgeRationale = "Told caller 10:00 was free when schedule shows Sarah Ahmed and James Wilson booked.";
-    } else if (acknowledgesConstraint && offersAlternative) {
-      commState = 'demonstrated';
-      commRationale = "Clearly explained 10:00 constraint and offered 11:30 alternative.";
-      probState = 'demonstrated';
-      probRationale = "Identified conflict and offered practical schedule alternative.";
-      judgeState = 'demonstrated';
-      judgeRationale = "Resisted double-booking occupied time slot.";
-      profState = 'demonstrated';
-      detailState = 'demonstrated';
-      followState = 'demonstrated';
+    if (!isNonsense && !promisesWrong && acknowledgesConstraint && offersAlternative) {
+      comm = 'demonstrated'; prob = 'demonstrated'; judge = 'demonstrated';
+      prof = 'demonstrated'; detail = 'demonstrated'; follow = 'demonstrated';
+    } else if (promisesWrong) {
+      comm = 'developing'; judge = 'developing';
     }
 
+    if (isPolite && !isNonsense) prof = 'developing';
+
     const capabilities = [
-      { capability: "communication", assessment: commState, evidence: [isNonsense ? "Off-topic response" : "Communicated with caller"], rationale: commRationale, confidence: "high" },
-      { capability: "problem_solving", assessment: probState, evidence: [offersAlternative ? "Offered 11:30 slot" : "Did not resolve conflict"], rationale: probRationale, confidence: "high" },
-      { capability: "judgement", assessment: judgeState, evidence: [promisesOccupiedSlot ? "Promised 10:00 slot" : "Handled schedule request"], rationale: judgeRationale, confidence: "high" },
-      { capability: "professionalism", assessment: profState, evidence: [isPolite ? "Polite language" : "Inappropriate response"], rationale: isPolite ? "Maintained polite tone." : "Lacked customer service standards.", confidence: "high" },
-      { capability: "attention_to_detail", assessment: detailState, evidence: [acknowledgesConstraint ? "Verified 10:00 conflict" : "Ignored schedule conflict"], rationale: acknowledgesConstraint ? "Accurately checked schedule." : "Failed to verify schedule availability.", confidence: "medium" },
-      { capability: "following_instructions", assessment: followState, evidence: [followState === 'demonstrated' ? "Followed role" : "Deviated from role"], rationale: followState === 'demonstrated' ? "Operated within administrative assistant role." : "Deviated from scenario requirements.", confidence: "high" }
+      { capability: 'communication', assessment: comm, evidence: [isNonsense ? 'Off-topic response given' : 'Communicated with the caller'], rationale: isNonsense ? 'Response was off-topic.' : 'Communicated with caller.', confidence: 'high' },
+      { capability: 'problem_solving', assessment: prob, evidence: [offersAlternative ? 'Offered alternative' : 'Did not resolve the issue'], rationale: offersAlternative ? 'Proposed practical alternative.' : 'Did not resolve the core issue.', confidence: 'high' },
+      { capability: 'judgement', assessment: judge, evidence: [promisesWrong ? 'Promised unavailable slot' : 'Handled request appropriately'], rationale: promisesWrong ? 'Incorrectly promised unavailable slot.' : 'Exercised appropriate judgement.', confidence: 'high' },
+      { capability: 'professionalism', assessment: prof, evidence: [isPolite ? 'Polite language used' : 'Unprofessional response'], rationale: isPolite ? 'Maintained polite tone.' : 'Lacked professional standards.', confidence: 'high' },
+      { capability: 'attention_to_detail', assessment: detail, evidence: [acknowledgesConstraint ? 'Verified schedule constraint' : 'Ignored key details'], rationale: acknowledgesConstraint ? 'Referenced schedule accurately.' : 'Failed to check details.', confidence: 'medium' },
+      { capability: 'following_instructions', assessment: follow, evidence: [follow === 'demonstrated' ? 'Stayed in role' : 'Deviated from role'], rationale: follow === 'demonstrated' ? 'Operated within assigned role.' : 'Did not follow scenario guidelines.', confidence: 'high' }
     ];
 
     const demonstratedCount = capabilities.filter(c => c.assessment === 'demonstrated').length;
@@ -326,10 +432,10 @@ export class AIProvider {
     return {
       capabilities,
       overall_summary: isNonsense
-        ? "The Individual provided off-topic and inappropriate responses during the simulation, requiring further capability development."
-        : promisesOccupiedSlot
-        ? "The Individual promised an unavailable appointment time slot without resolving schedule constraints."
-        : "The Individual demonstrated strong workplace communication and problem solving during the scheduling conflict.",
+        ? 'The trainee provided off-topic responses during the simulation, requiring further capability development.'
+        : promisesWrong
+          ? 'The trainee promised an unavailable appointment slot, indicating a need to develop judgement and attention to detail.'
+          : 'The trainee demonstrated strong workplace communication and problem-solving during the scenario.',
       overall_signal: overallSignal
     };
   }

@@ -7,24 +7,30 @@ const router = express.Router();
 // Helper to generate IDs
 const uid = (prefix) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
 
+// ============================================================
 // 1. INDIVIDUALS
+// ============================================================
 router.post('/individuals', async (req, res) => {
   try {
     const { email, display_name, preferred_language = 'en' } = req.body;
     let individual = await getQuery('SELECT * FROM individuals WHERE email = ?', [email]);
-    
+
     if (!individual) {
       const id = uid('ind');
       await runQuery(
         `INSERT INTO individuals (id, external_reference, display_name, email, preferred_language)
          VALUES (?, ?, ?, ?, ?)`,
-        [id, `REF-${Math.floor(1000 + Math.random() * 9000)}`, display_name || 'Amina Hassan', email, preferred_language]
+        [id, `REF-${Math.floor(1000 + Math.random() * 9000)}`, display_name || 'New User', email, preferred_language]
       );
       individual = await getQuery('SELECT * FROM individuals WHERE id = ?', [id]);
+      console.log(`[INDIVIDUALS] Created new individual: ${email} (${id})`);
+    } else {
+      console.log(`[INDIVIDUALS] Found existing individual: ${email} (${individual.id})`);
     }
-    
+
     res.json(individual);
   } catch (err) {
+    console.error('[INDIVIDUALS] Error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -39,7 +45,9 @@ router.get('/individuals/:id', async (req, res) => {
   }
 });
 
+// ============================================================
 // 2. ONBOARDING
+// ============================================================
 router.post('/onboarding/sessions', async (req, res) => {
   try {
     const { individual_id } = req.body;
@@ -49,8 +57,10 @@ router.post('/onboarding/sessions', async (req, res) => {
       [sessionId, individual_id]
     );
     const session = await getQuery('SELECT * FROM onboarding_sessions WHERE id = ?', [sessionId]);
+    console.log(`[ONBOARDING] Session started: ${sessionId} for individual ${individual_id}`);
     res.json(session);
   } catch (err) {
+    console.error('[ONBOARDING] Session creation error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -67,9 +77,29 @@ router.post('/onboarding/sessions/:id/interactions', async (req, res) => {
       [interactionId, individual_id, sessionId, modality || 'voice', prompt, raw_input, transcript]
     );
 
+    console.log(`[ONBOARDING] Interaction recorded: q="${prompt?.substring(0, 50)}" answer="${transcript?.substring(0, 60)}"`);
     const interaction = await getQuery('SELECT * FROM interactions WHERE id = ?', [interactionId]);
     res.json(interaction);
   } catch (err) {
+    console.error('[ONBOARDING] Interaction recording error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// NEW: Per-answer real-time AI feedback
+router.post('/onboarding/ai-feedback', async (req, res) => {
+  try {
+    const { question, answer, question_index = 0 } = req.body;
+    if (!question || !answer) {
+      return res.status(400).json({ error: 'question and answer are required' });
+    }
+
+    console.log(`[ONBOARDING AI-FEEDBACK] Q${question_index + 1}: "${answer?.substring(0, 80)}"`);
+    const feedback = await aiProvider.getOnboardingFeedback(question, answer, question_index);
+    console.log(`[ONBOARDING AI-FEEDBACK] redirect_needed=${feedback.redirect_needed} tentative_track=${feedback.tentative_track_name}`);
+    res.json(feedback);
+  } catch (err) {
+    console.error('[ONBOARDING AI-FEEDBACK] Error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -80,13 +110,23 @@ router.post('/onboarding/sessions/:id/complete', async (req, res) => {
     const session = await getQuery('SELECT * FROM onboarding_sessions WHERE id = ?', [sessionId]);
     if (!session) return res.status(404).json({ error: 'Session not found' });
 
-    const interactions = await allQuery('SELECT * FROM interactions WHERE session_id = ? ORDER BY created_at ASC', [sessionId]);
+    const interactions = await allQuery(
+      'SELECT * FROM interactions WHERE session_id = ? ORDER BY created_at ASC',
+      [sessionId]
+    );
 
-    // AI Extraction of structured signals
+    console.log(`[ONBOARDING] Completing session ${sessionId} with ${interactions.length} interactions — calling AI...`);
+
+    // AI Extraction — now returns pathway_id directly
     const extractedSignals = await aiProvider.extractOnboardingSignals(interactions);
 
+    console.log(`[ONBOARDING] AI assigned pathway: ${extractedSignals.assigned_pathway} (${extractedSignals.assigned_pathway_id})`);
+
     // Update session status
-    await runQuery('UPDATE onboarding_sessions SET status = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?', ['completed', sessionId]);
+    await runQuery(
+      'UPDATE onboarding_sessions SET status = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?',
+      ['completed', sessionId]
+    );
 
     // Update Individual profile fields
     await runQuery(
@@ -106,19 +146,33 @@ router.post('/onboarding/sessions/:id/complete', async (req, res) => {
       ]
     );
 
-    // Get Pathway ID
-    let pathway = await getQuery('SELECT * FROM pathways WHERE name = ?', [extractedSignals.assigned_pathway]);
+    // Get Pathway — use assigned_pathway_id first, fall back to name match
+    let pathway = null;
+    if (extractedSignals.assigned_pathway_id) {
+      pathway = await getQuery('SELECT * FROM pathways WHERE id = ?', [extractedSignals.assigned_pathway_id]);
+    }
+    if (!pathway && extractedSignals.assigned_pathway) {
+      pathway = await getQuery('SELECT * FROM pathways WHERE name = ?', [extractedSignals.assigned_pathway]);
+    }
     if (!pathway) {
       pathway = await getQuery('SELECT * FROM pathways LIMIT 1');
+      console.warn(`[ONBOARDING] Pathway not found for "${extractedSignals.assigned_pathway_id}" — defaulting to first pathway`);
     }
 
-    // Assign Pathway & Create initial Readiness Profile
+    console.log(`[ONBOARDING] Pathway resolved: ${pathway.name} (${pathway.id})`);
+
+    // Delete any existing readiness profile for this individual (re-assign on re-onboarding)
+    await runQuery('DELETE FROM readiness_profiles WHERE individual_id = ?', [session.individual_id]);
+
+    // Create Readiness Profile
     const profileId = uid('prof');
     await runQuery(
       `INSERT INTO readiness_profiles (id, individual_id, pathway_id, overall_signal, profile_version)
        VALUES (?, ?, ?, ?, 'v1.0')`,
       [profileId, session.individual_id, pathway.id, 'developing']
     );
+
+    console.log(`[ONBOARDING] Readiness profile created: ${profileId}`);
 
     res.json({
       session_id: sessionId,
@@ -131,14 +185,18 @@ router.post('/onboarding/sessions/:id/complete', async (req, res) => {
       }
     });
   } catch (err) {
+    console.error('[ONBOARDING] Complete session error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
+// ============================================================
 // 3. PATHWAYS
+// ============================================================
 router.get('/pathways', async (req, res) => {
   try {
     const pathways = await allQuery('SELECT * FROM pathways WHERE active = 1');
+    console.log(`[PATHWAYS] Returning ${pathways.length} active pathways`);
     res.json(pathways);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -151,7 +209,10 @@ router.post('/pathways/assign', async (req, res) => {
     const pathway = await getQuery('SELECT * FROM pathways WHERE id = ?', [pathway_id]);
     if (!pathway) return res.status(404).json({ error: 'Pathway not found' });
 
-    let profile = await getQuery('SELECT * FROM readiness_profiles WHERE individual_id = ? AND pathway_id = ?', [individual_id, pathway_id]);
+    let profile = await getQuery(
+      'SELECT * FROM readiness_profiles WHERE individual_id = ? AND pathway_id = ?',
+      [individual_id, pathway_id]
+    );
     if (!profile) {
       const profileId = uid('prof');
       await runQuery(
@@ -167,7 +228,24 @@ router.post('/pathways/assign', async (req, res) => {
   }
 });
 
+// ============================================================
 // 4. SIMULATIONS
+// ============================================================
+
+// Get simulation for a specific pathway
+router.get('/simulations/by-pathway/:pathway_id', async (req, res) => {
+  try {
+    const simulation = await getQuery(
+      'SELECT * FROM simulations WHERE pathway_id = ? AND active = 1',
+      [req.params.pathway_id]
+    );
+    if (!simulation) return res.status(404).json({ error: 'No simulation found for this pathway' });
+    res.json(simulation);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.post('/simulations/sessions', async (req, res) => {
   try {
     const { individual_id, simulation_id } = req.body;
@@ -179,8 +257,10 @@ router.post('/simulations/sessions', async (req, res) => {
 
     const session = await getQuery('SELECT * FROM simulation_sessions WHERE id = ?', [sessionId]);
     const simulation = await getQuery('SELECT * FROM simulations WHERE id = ?', [simulation_id]);
+    console.log(`[SIMULATION] Session started: ${sessionId} for simulation "${simulation?.title}"`);
     res.json({ session, simulation });
   } catch (err) {
+    console.error('[SIMULATION] Session start error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -203,11 +283,17 @@ router.post('/simulations/sessions/:id/turns', async (req, res) => {
       [turnId, sessionId, turn_number, input_modality, transcript]
     );
 
-    // Fetch turn history
-    const history = await allQuery('SELECT * FROM simulation_turns WHERE simulation_session_id = ? ORDER BY turn_number ASC', [sessionId]);
+    console.log(`[SIMULATION] Turn ${turn_number} recorded: "${transcript?.substring(0, 80)}"`);
 
-    // AI Generates Customer Response
+    // Fetch full turn history
+    const history = await allQuery(
+      'SELECT * FROM simulation_turns WHERE simulation_session_id = ? ORDER BY turn_number ASC',
+      [sessionId]
+    );
+
+    // AI Generates Customer/Colleague Response
     const aiResponse = await aiProvider.generateSimulationResponse(simulation.scenario_context, history);
+    console.log(`[SIMULATION] AI response (state=${aiResponse.conversation_state}): "${aiResponse.message?.substring(0, 80)}"`);
 
     // Record AI's turn
     const aiTurnId = uid('turn');
@@ -223,6 +309,7 @@ router.post('/simulations/sessions/:id/turns', async (req, res) => {
       turn_number: turn_number + 1
     });
   } catch (err) {
+    console.error('[SIMULATION] Turn error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -234,10 +321,16 @@ router.post('/simulations/sessions/:id/evaluate', async (req, res) => {
     if (!session) return res.status(404).json({ error: 'Simulation session not found' });
 
     const simulation = await getQuery('SELECT * FROM simulations WHERE id = ?', [session.simulation_id]);
-    const history = await allQuery('SELECT * FROM simulation_turns WHERE simulation_session_id = ? ORDER BY turn_number ASC', [sessionId]);
+    const history = await allQuery(
+      'SELECT * FROM simulation_turns WHERE simulation_session_id = ? ORDER BY turn_number ASC',
+      [sessionId]
+    );
 
-    // Run AI Evaluation against 6 capability rubrics
+    console.log(`[SIMULATION] Evaluating session ${sessionId} (${history.length} turns) — calling AI...`);
+
+    // Run AI Evaluation
     const evalResult = await aiProvider.evaluateSimulation(simulation.scenario_context, history);
+    console.log(`[SIMULATION] Evaluation complete: overall_signal=${evalResult.overall_signal}`);
 
     // Create Assessment record
     const assessmentId = uid('asm');
@@ -251,26 +344,19 @@ router.post('/simulations/sessions/:id/evaluate', async (req, res) => {
     for (const cap of evalResult.capabilities) {
       const evidenceId = uid('ev');
       const evidenceText = cap.evidence.join('; ');
-      
+
       await runQuery(
         `INSERT INTO evidence_records (id, assessment_id, individual_id, simulation_session_id, capability, observable_behaviour, evidence_text, assessment_state, confidence, rationale)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          evidenceId,
-          assessmentId,
-          session.individual_id,
-          sessionId,
-          cap.capability,
-          cap.evidence[0] || 'Observable workplace behavior demonstrated during scenario turn',
-          evidenceText,
-          cap.assessment,
-          cap.confidence || 'medium',
-          cap.rationale
-        ]
+        [evidenceId, assessmentId, session.individual_id, sessionId,
+          cap.capability, cap.evidence[0] || 'Observable workplace behaviour demonstrated during scenario', evidenceText,
+          cap.assessment, cap.confidence || 'medium', cap.rationale]
       );
 
-      // Update or Insert Capability Signal
-      const existingSignal = await getQuery('SELECT * FROM capability_signals WHERE individual_id = ? AND capability = ?', [session.individual_id, cap.capability]);
+      const existingSignal = await getQuery(
+        'SELECT * FROM capability_signals WHERE individual_id = ? AND capability = ?',
+        [session.individual_id, cap.capability]
+      );
 
       if (existingSignal) {
         await runQuery(
@@ -280,17 +366,19 @@ router.post('/simulations/sessions/:id/evaluate', async (req, res) => {
       } else {
         const signalId = uid('sig');
         await runQuery(
-          `INSERT INTO capability_signals (id, individual_id, capability, state, evidence_count, confidence)
-           VALUES (?, ?, ?, ?, 1, ?)`,
+          `INSERT INTO capability_signals (id, individual_id, capability, state, evidence_count, confidence) VALUES (?, ?, ?, ?, 1, ?)`,
           [signalId, session.individual_id, cap.capability, cap.assessment, cap.confidence || 'medium']
         );
       }
     }
 
     // Mark Simulation Session Completed
-    await runQuery('UPDATE simulation_sessions SET status = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?', ['completed', sessionId]);
+    await runQuery(
+      'UPDATE simulation_sessions SET status = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?',
+      ['completed', sessionId]
+    );
 
-    // Update Readiness Profile Aggregation
+    // Update Readiness Profile
     const signals = await allQuery('SELECT * FROM capability_signals WHERE individual_id = ?', [session.individual_id]);
     const demonstratedCount = signals.filter(s => s.state === 'demonstrated').length;
     const overallSignal = demonstratedCount >= 4 ? 'demonstrated' : demonstratedCount >= 2 ? 'developing' : 'insufficient_evidence';
@@ -300,20 +388,21 @@ router.post('/simulations/sessions/:id/evaluate', async (req, res) => {
       [overallSignal, session.individual_id]
     );
 
+    console.log(`[SIMULATION] Readiness profile updated: overall_signal=${overallSignal}`);
+
     const assessment = await getQuery('SELECT * FROM assessments WHERE id = ?', [assessmentId]);
     const evidence = await allQuery('SELECT * FROM evidence_records WHERE assessment_id = ?', [assessmentId]);
 
-    res.json({
-      assessment,
-      evaluation: evalResult,
-      evidence
-    });
+    res.json({ assessment, evaluation: evalResult, evidence });
   } catch (err) {
+    console.error('[SIMULATION] Evaluation error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
+// ============================================================
 // 5. EVIDENCE & READINESS
+// ============================================================
 router.get('/individuals/:id/evidence', async (req, res) => {
   try {
     const evidence = await allQuery(
@@ -334,11 +423,14 @@ router.get('/individuals/:id/evidence', async (req, res) => {
 router.get('/individuals/:id/readiness', async (req, res) => {
   try {
     const individualId = req.params.id;
-    const individual = await getQuery('SELECT id, display_name, email, preferred_language, availability, employment_interests, digital_confidence FROM individuals WHERE id = ?', [individualId]);
+    const individual = await getQuery(
+      'SELECT id, display_name, email, preferred_language, availability, employment_interests, digital_confidence FROM individuals WHERE id = ?',
+      [individualId]
+    );
     if (!individual) return res.status(404).json({ error: 'Individual not found' });
 
     const profile = await getQuery(
-      `SELECT rp.*, p.name as pathway_name, p.description as pathway_description
+      `SELECT rp.*, p.name as pathway_name, p.description as pathway_description, p.id as pathway_id
        FROM readiness_profiles rp
        JOIN pathways p ON rp.pathway_id = p.id
        WHERE rp.individual_id = ?`,
@@ -346,7 +438,10 @@ router.get('/individuals/:id/readiness', async (req, res) => {
     );
 
     const signals = await allQuery('SELECT * FROM capability_signals WHERE individual_id = ?', [individualId]);
-    const evidence = await allQuery('SELECT * FROM evidence_records WHERE individual_id = ? ORDER BY created_at DESC', [individualId]);
+    const evidence = await allQuery(
+      'SELECT * FROM evidence_records WHERE individual_id = ? ORDER BY created_at DESC',
+      [individualId]
+    );
 
     res.json({
       individual,
@@ -360,7 +455,9 @@ router.get('/individuals/:id/readiness', async (req, res) => {
   }
 });
 
+// ============================================================
 // 6. EMPLOYER ENDPOINTS (Privacy Controlled)
+// ============================================================
 router.get('/employer/individuals', async (req, res) => {
   try {
     const individuals = await allQuery(`
@@ -371,17 +468,22 @@ router.get('/employer/individuals', async (req, res) => {
       LEFT JOIN pathways p ON rp.pathway_id = p.id
     `);
 
-    // Attach capability signals & evidence count to each anonymized candidate
     const candidates = await Promise.all(
       individuals.map(async (ind) => {
-        const signals = await allQuery('SELECT capability, state, confidence FROM capability_signals WHERE individual_id = ?', [ind.id]);
-        const evidenceCount = (await getQuery('SELECT COUNT(*) as cnt FROM evidence_records WHERE individual_id = ?', [ind.id])).cnt;
+        const signals = await allQuery(
+          'SELECT capability, state, confidence FROM capability_signals WHERE individual_id = ?',
+          [ind.id]
+        );
+        const evidenceCount = (await getQuery(
+          'SELECT COUNT(*) as cnt FROM evidence_records WHERE individual_id = ?',
+          [ind.id]
+        )).cnt;
 
         return {
           id: ind.id,
           alias: ind.display_name,
           external_reference: ind.external_reference,
-          pathway: ind.pathway_name || 'Administrative Assistant',
+          pathway: ind.pathway_name || 'Pathway Not Assigned',
           pathway_id: ind.pathway_id,
           overall_signal: ind.overall_signal || 'developing',
           digital_confidence: ind.digital_confidence || 'moderate',
@@ -401,7 +503,10 @@ router.get('/employer/individuals', async (req, res) => {
 router.get('/employer/individuals/:id', async (req, res) => {
   try {
     const individualId = req.params.id;
-    const ind = await getQuery('SELECT id, display_name, external_reference, availability, digital_confidence FROM individuals WHERE id = ?', [individualId]);
+    const ind = await getQuery(
+      'SELECT id, display_name, external_reference, availability, digital_confidence FROM individuals WHERE id = ?',
+      [individualId]
+    );
     if (!ind) return res.status(404).json({ error: 'Individual not found' });
 
     const profile = await getQuery(
@@ -412,11 +517,12 @@ router.get('/employer/individuals/:id', async (req, res) => {
       [individualId]
     );
 
-    const signals = await allQuery('SELECT capability, state, confidence, evidence_count FROM capability_signals WHERE individual_id = ?', [individualId]);
-    
-    // EXPLICIT PRIVACY MODEL:
-    // Raw conversational transcripts are NOT exposed in employer API.
-    // Expose structured evidence records with observed behaviours and capability links.
+    const signals = await allQuery(
+      'SELECT capability, state, confidence, evidence_count FROM capability_signals WHERE individual_id = ?',
+      [individualId]
+    );
+
+    // Privacy model: no raw transcripts exposed
     const evidenceSummaries = await allQuery(
       `SELECT id, capability, observable_behaviour, evidence_text, assessment_state, confidence, created_at
        FROM evidence_records WHERE individual_id = ? ORDER BY created_at DESC`,

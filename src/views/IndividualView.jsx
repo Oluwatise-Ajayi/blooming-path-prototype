@@ -1,11 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
 
-export default function IndividualView({ currentLang, onOpenEvidenceTrail }) {
+// Track metadata for dynamic theming
+const TRACK_META = {
+  'pathway-admin-asst':      { icon: 'admin_panel_settings', color: '#4f8ef7', accent: 'blue' },
+  'pathway-health-support':  { icon: 'health_and_safety',    color: '#34a07a', accent: 'green' },
+  'pathway-retail-customer': { icon: 'storefront',            color: '#e87a2e', accent: 'orange' },
+  'pathway-hospitality':     { icon: 'restaurant',            color: '#9b59b6', accent: 'purple' },
+  'pathway-cleaning-fm':     { icon: 'cleaning_services',     color: '#17a589', accent: 'teal' },
+};
+
+export default function IndividualView({ userEmail, currentLang, onOpenEvidenceTrail }) {
   const [activeTab, setActiveTab] = useState('home'); // 'home', 'pathway', 'practice', 'readiness', 'evidence', 'profile'
   const [individual, setIndividual] = useState(null);
   const [readinessData, setReadinessData] = useState(null);
   const [evidenceList, setEvidenceList] = useState([]);
+  const [currentSimulation, setCurrentSimulation] = useState(null);
 
   // Workplace Simulation State
   const [simSessionId, setSimSessionId] = useState(null);
@@ -21,7 +31,9 @@ export default function IndividualView({ currentLang, onOpenEvidenceTrail }) {
   useEffect(() => {
     async function loadData() {
       try {
-        const ind = await api.getOrCreateIndividual('amina.hassan@example.com', 'Amina Hassan', currentLang);
+        const email = userEmail || 'amina.hassan@example.com';
+        const displayName = email.split('@')[0].replace(/[._]/g, ' ') || 'User';
+        const ind = await api.getOrCreateIndividual(email, displayName, currentLang);
         setIndividual(ind);
 
         const readiness = await api.getIndividualReadiness(ind.id);
@@ -29,12 +41,23 @@ export default function IndividualView({ currentLang, onOpenEvidenceTrail }) {
 
         const evidence = await api.getIndividualEvidence(ind.id);
         setEvidenceList(evidence);
+
+        // Load the correct simulation for this individual's pathway
+        if (readiness?.readiness_profile?.pathway_id) {
+          try {
+            const sim = await api.getSimulationByPathway(readiness.readiness_profile.pathway_id);
+            setCurrentSimulation(sim);
+          } catch {
+            // Simulation not yet available for this pathway
+            setCurrentSimulation(null);
+          }
+        }
       } catch (err) {
         console.error('Failed to load Individual data:', err);
       }
     }
     loadData();
-  }, [currentLang]);
+  }, [userEmail, currentLang]);
 
   // Audio Speech Synthesis helper
   const speakText = (text) => {
@@ -48,7 +71,7 @@ export default function IndividualView({ currentLang, onOpenEvidenceTrail }) {
     }
   };
 
-  // Start Simulation Session
+  // Start Simulation Session — uses the track-specific simulation
   const handleStartSimulation = async () => {
     if (!individual) return;
     try {
@@ -56,16 +79,23 @@ export default function IndividualView({ currentLang, onOpenEvidenceTrail }) {
       setTurnHistory([]);
       setSimTurnNumber(1);
 
-      const { session, simulation } = await api.startSimulationSession(individual.id, 'sim-appointment-scheduling');
-      setSimSessionId(session.id);
+      // Determine simulation ID: use current track's simulation, fallback to admin
+      const pathwayId = readinessData?.readiness_profile?.pathway_id;
+      let simToLoad = currentSimulation;
+      if (!simToLoad && pathwayId) {
+        try { simToLoad = await api.getSimulationByPathway(pathwayId); } catch {}
+      }
+      const simulationId = simToLoad?.id || 'sim-appointment-scheduling';
 
-      // Initial Customer Prompt Turn
-      const initialPrompt = {
-        speaker: 'simulated_customer',
-        transcript: "Hi, I'm calling about my appointment today. Is it possible to move my 11:30 appointment to 10:00 am instead?"
-      };
+      const { session, simulation } = await api.startSimulationSession(individual.id, simulationId);
+      setSimSessionId(session.id);
+      if (simulation) setCurrentSimulation(simulation);
+
+      // Opening line: use simulation's scenario or generic prompt
+      const openingLine = "Hello, I'm calling about my appointment. I was wondering if we could make a change — could you help me please?";
+      const initialPrompt = { speaker: 'simulated_customer', transcript: openingLine };
       setTurnHistory([initialPrompt]);
-      speakText(initialPrompt.transcript);
+      speakText(openingLine);
     } catch (err) {
       console.error('Failed to start simulation:', err);
     }
@@ -191,30 +221,43 @@ export default function IndividualView({ currentLang, onOpenEvidenceTrail }) {
       {/* ================= TAB 1: HOME ================= */}
       {activeTab === 'home' && (
         <div className="space-y-6 animate-fadeIn">
-          {/* Welcome Banner */}
-          <div className="bg-gradient-to-r from-surface-container-low via-surface-container to-surface-container-high p-6 rounded-2xl border border-primary-fixed relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <div>
-              <span className="px-3 py-1 rounded-full bg-secondary-container text-on-secondary-container text-xs font-bold uppercase tracking-wider mb-2 inline-block">
-                Assigned Pathway: Administrative Assistant
-              </span>
-              <h2 className="text-2xl font-bold text-on-background">Welcome, {individual?.display_name || 'Amina Hassan'}</h2>
-              <p className="text-xs text-on-surface-variant mt-1">
-                Your workforce readiness infrastructure profile is active. Practice workplace scenarios to generate capability evidence.
-              </p>
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={() => {
-                  setActiveTab('practice');
-                  handleStartSimulation();
-                }}
-                className="px-5 py-2.5 rounded-xl bg-primary text-on-primary font-bold text-xs hover:opacity-90 transition-all shadow-sm flex items-center gap-2"
+          {/* Welcome Banner — track-aware */}
+          {(() => {
+            const pathwayId = readinessData?.readiness_profile?.pathway_id;
+            const meta = TRACK_META[pathwayId] || TRACK_META['pathway-admin-asst'];
+            const pathwayName = readinessData?.readiness_profile?.pathway_name || 'Administrative Assistant';
+            return (
+              <div
+                className="p-6 rounded-2xl relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-4"
+                style={{ background: `linear-gradient(135deg, ${meta.color}18, ${meta.color}08)`, border: `1.5px solid ${meta.color}44` }}
               >
-                <span className="material-symbols-outlined text-[18px]">play_arrow</span>
-                Start Workplace Simulation
-              </button>
-            </div>
-          </div>
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0" style={{ background: `${meta.color}22` }}>
+                    <span className="material-symbols-outlined text-[26px]" style={{ color: meta.color }}>{meta.icon}</span>
+                  </div>
+                  <div>
+                    <span className="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider mb-2 inline-block" style={{ background: `${meta.color}22`, color: meta.color }}>
+                      Assigned Pathway: {pathwayName}
+                    </span>
+                    <h2 className="text-2xl font-bold text-on-background">Welcome, {individual?.display_name || 'User'}</h2>
+                    <p className="text-xs text-on-surface-variant mt-1">
+                      Your workforce readiness profile is active. Practice your track scenario to build capability evidence.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => { setActiveTab('practice'); handleStartSimulation(); }}
+                    className="px-5 py-2.5 rounded-xl text-white font-bold text-xs hover:opacity-90 transition-all shadow-sm flex items-center gap-2"
+                    style={{ background: meta.color }}
+                  >
+                    <span className="material-symbols-outlined text-[18px]">play_arrow</span>
+                    Start Workplace Simulation
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Quick Metrics Bento */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -249,9 +292,11 @@ export default function IndividualView({ currentLang, onOpenEvidenceTrail }) {
             <div className="glass-card rounded-2xl p-6 flex flex-col justify-between">
               <span className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">Target Role Alignment</span>
               <div className="my-4">
-                <span className="text-xl font-bold text-on-surface">Administrative Assistant</span>
+                <span className="text-xl font-bold text-on-surface">
+                  {readinessData?.readiness_profile?.pathway_name || 'Administrative Assistant'}
+                </span>
                 <p className="text-[11px] text-on-surface-variant mt-1">
-                  Office scheduling, appointment triage, & customer communication.
+                  {readinessData?.readiness_profile?.pathway_description || 'Office administration, scheduling, and customer communication.'}
                 </p>
               </div>
               <button onClick={() => setActiveTab('pathway')} className="text-xs font-bold text-secondary hover:underline flex items-center gap-1">
@@ -266,39 +311,36 @@ export default function IndividualView({ currentLang, onOpenEvidenceTrail }) {
       {activeTab === 'pathway' && (
         <div className="space-y-6 animate-fadeIn">
           <div className="glass-card rounded-2xl p-6 border border-primary-fixed space-y-4">
-            <div className="flex justify-between items-start border-b border-outline-variant pb-4">
-              <div>
-                <span className="px-3 py-1 rounded-full bg-primary-container text-on-primary text-xs font-bold uppercase tracking-wider mb-2 inline-block">
-                  Workforce Pathway
-                </span>
-                <h2 className="text-xl font-bold text-on-surface">Administrative Assistant</h2>
-                <p className="text-xs text-on-surface-variant mt-0.5">
-                  Prepares individuals for administrative, appointment scheduling, customer contact, and office operations.
-                </p>
-              </div>
-            </div>
+            {(() => {
+              const pathwayId = readinessData?.readiness_profile?.pathway_id;
+              const meta = TRACK_META[pathwayId] || TRACK_META['pathway-admin-asst'];
+              const pathwayName = readinessData?.readiness_profile?.pathway_name || 'Administrative Assistant';
+              const pathwayDesc = readinessData?.readiness_profile?.pathway_description || 'Prepares individuals for administrative, scheduling, customer contact, and office operations roles.';
+              return (
+                <>
+                  <div className="flex items-start gap-4 border-b border-outline-variant pb-4">
+                    <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0" style={{ background: `${meta.color}22` }}>
+                      <span className="material-symbols-outlined text-[26px]" style={{ color: meta.color }}>{meta.icon}</span>
+                    </div>
+                    <div>
+                      <span className="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider mb-2 inline-block" style={{ background: `${meta.color}22`, color: meta.color }}>
+                        Workforce Pathway
+                      </span>
+                      <h2 className="text-xl font-bold text-on-surface">{pathwayName}</h2>
+                      <p className="text-xs text-on-surface-variant mt-0.5">{pathwayDesc}</p>
+                    </div>
+                  </div>
 
-            <div className="p-4 rounded-xl bg-surface-container-low border border-outline-variant space-y-3">
-              <h4 className="text-xs font-bold text-primary uppercase tracking-wider">Pathway Alignment Rationale</h4>
-              <ul className="space-y-2 text-xs">
-                <li className="flex items-center gap-2 text-on-surface">
-                  <span className="material-symbols-outlined text-secondary text-[16px]">check_circle</span>
-                  Matches stated work interests in office administration
-                </li>
-                <li className="flex items-center gap-2 text-on-surface">
-                  <span className="material-symbols-outlined text-secondary text-[16px]">check_circle</span>
-                  Builds on previous customer and office exposure
-                </li>
-                <li className="flex items-center gap-2 text-on-surface">
-                  <span className="material-symbols-outlined text-secondary text-[16px]">check_circle</span>
-                  Aligns with spoken communication strengths
-                </li>
-                <li className="flex items-center gap-2 text-on-surface">
-                  <span className="material-symbols-outlined text-tertiary text-[16px]">info</span>
-                  Digital confidence identified as an area to develop
-                </li>
-              </ul>
-            </div>
+                  <div className="p-4 rounded-xl bg-surface-container-low border border-outline-variant space-y-2">
+                    <h4 className="text-xs font-bold text-primary uppercase tracking-wider">Pathway Details</h4>
+                    <p className="text-xs text-on-surface-variant leading-relaxed">
+                      Your onboarding responses were analysed to match you with the <strong className="text-on-surface">{pathwayName}</strong> pathway.
+                      Workplace simulations for this track are designed to assess capabilities relevant to real UK employer requirements in this sector.
+                    </p>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         </div>
       )}
@@ -313,9 +355,11 @@ export default function IndividualView({ currentLang, onOpenEvidenceTrail }) {
                 <span className="px-3 py-1 rounded-full bg-secondary-container text-on-secondary-container text-xs font-bold uppercase tracking-wider mb-2 inline-block">
                   Role-Specific Simulation
                 </span>
-                <h2 className="text-xl font-bold text-on-surface">Administrative Assistant — Appointment Scheduling</h2>
+                <h2 className="text-xl font-bold text-on-surface">
+                  {currentSimulation?.title || readinessData?.readiness_profile?.pathway_name || 'Workplace Practice Simulation'}
+                </h2>
                 <p className="text-xs text-on-surface-variant mt-0.5">
-                  Multi-turn conversational scenario. Manage schedule constraints while responding professionally.
+                  {currentSimulation?.description || 'Multi-turn conversational scenario to build and evidence your workplace capabilities.'}
                 </p>
               </div>
 
@@ -374,11 +418,13 @@ export default function IndividualView({ currentLang, onOpenEvidenceTrail }) {
                         : 'bg-primary text-on-primary'
                     }`}
                   >
-                    {turn.speaker === 'individual' ? 'AH' : 'MB'}
+                    {turn.speaker === 'individual'
+                      ? (individual?.display_name?.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase() || 'ME')
+                      : 'SIM'}
                   </div>
                   <div>
                     <p className={`text-xs font-bold mb-1 ${turn.speaker === 'individual' ? 'text-secondary' : 'text-primary'}`}>
-                      {turn.speaker === 'individual' ? 'Amina Hassan (Individual)' : 'Michael Brown (Caller)'}:
+                      {turn.speaker === 'individual' ? `${individual?.display_name || 'You'} (Individual)` : 'Simulated Character'}:
                     </p>
                     <p className="text-xs text-on-surface">{turn.transcript}</p>
                   </div>

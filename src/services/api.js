@@ -54,6 +54,13 @@ export const api = {
       method: 'POST',
     }),
 
+  // Real-time per-answer AI feedback during onboarding
+  getOnboardingFeedback: (question, answer, question_index) =>
+    request('/onboarding/ai-feedback', {
+      method: 'POST',
+      body: { question, answer, question_index },
+    }),
+
   // Pathways
   getPathways: () => request('/pathways'),
 
@@ -64,7 +71,9 @@ export const api = {
     }),
 
   // Workplace Simulations
-  startSimulationSession: (individual_id, simulation_id = 'sim-appointment-scheduling') =>
+  getSimulationByPathway: (pathway_id) => request(`/simulations/by-pathway/${pathway_id}`),
+
+  startSimulationSession: (individual_id, simulation_id) =>
     request('/simulations/sessions', {
       method: 'POST',
       body: { individual_id, simulation_id },

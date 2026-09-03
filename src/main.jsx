@@ -100,6 +100,7 @@ function App() {
             {activeRole === 'individual' && (
               <div className="pt-[85px] pb-16">
                 <IndividualView
+                  userEmail={userEmail}
                   currentLang={currentLang}
                   onOpenEvidenceTrail={handleOpenEvidenceTrail}
                 />
