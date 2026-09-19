@@ -89,13 +89,13 @@ router.post('/onboarding/sessions/:id/interactions', async (req, res) => {
 // NEW: Per-answer real-time AI feedback
 router.post('/onboarding/ai-feedback', async (req, res) => {
   try {
-    const { question, answer, question_index = 0 } = req.body;
+    const { question, answer, question_index = 0, previous_tentative_track_id = null } = req.body;
     if (!question || !answer) {
       return res.status(400).json({ error: 'question and answer are required' });
     }
 
-    console.log(`[ONBOARDING AI-FEEDBACK] Q${question_index + 1}: "${answer?.substring(0, 80)}"`);
-    const feedback = await aiProvider.getOnboardingFeedback(question, answer, question_index);
+    console.log(`[ONBOARDING AI-FEEDBACK] Q${question_index + 1}: "${answer?.substring(0, 80)}" prev_track=${previous_tentative_track_id || 'none'}`);
+    const feedback = await aiProvider.getOnboardingFeedback(question, answer, question_index, previous_tentative_track_id);
     console.log(`[ONBOARDING AI-FEEDBACK] redirect_needed=${feedback.redirect_needed} tentative_track=${feedback.tentative_track_name}`);
     res.json(feedback);
   } catch (err) {
@@ -182,7 +182,8 @@ router.post('/onboarding/sessions/:id/complete', async (req, res) => {
       pathway_alignment: {
         pathway_name: pathway.name,
         reasons: extractedSignals.pathway_alignment_reasons
-      }
+      },
+      pathway_recommendations: extractedSignals.pathway_recommendations || []
     });
   } catch (err) {
     console.error('[ONBOARDING] Complete session error:', err.message);

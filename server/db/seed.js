@@ -38,6 +38,13 @@ const PATHWAYS = [
     description: 'Prepares individuals for commercial cleaning operative, building services assistant, and facilities support roles in offices, hospitals, and public buildings.',
     icon: 'cleaning_services',
     color: 'teal'
+  },
+  {
+    id: 'pathway-warehouse-logistics',
+    name: 'Warehousing & Logistics Assistant',
+    description: 'Prepares individuals for stock picking, packing, goods-in/goods-out, and warehouse operations roles in UK distribution centres, supermarket depots, and logistics firms.',
+    icon: 'warehouse',
+    color: 'amber'
   }
 ];
 
@@ -79,13 +86,20 @@ const SIMULATIONS = [
     title: 'Cleaning & Facilities — Reporting a Safety Incident',
     description: 'Identify and correctly report a health and safety hazard discovered during a cleaning round.',
     scenario_context: 'You are a cleaning operative at Meridian Office Park. During your morning cleaning round on the 3rd floor, you discover a broken ceiling tile has fallen and left sharp debris on the floor near the photocopier area. Several members of staff are due to arrive within 30 minutes. Your supervisor, Kevin, is on site but currently on a call. You must: correctly isolate the hazard area, communicate the incident to your supervisor clearly, and ensure the area is made safe before staff arrive. The simulated conversation is with your supervisor Kevin, who you need to brief on the situation.'
+  },
+  {
+    id: 'sim-warehouse-induction',
+    pathway_id: 'pathway-warehouse-logistics',
+    title: 'Warehousing — Handling a Damaged Goods Discovery',
+    description: 'Correctly identify, report, and quarantine a damaged delivery to the warehouse team leader.',
+    scenario_context: 'You are a warehouse operative at Swift Logistics Distribution Centre. During a goods-in shift, you are scanning and checking incoming pallets when you discover that one pallet of electronics — 12 boxed televisions — has visible damage: two boxes are crushed, one has a punctured seal. The delivery driver has already left. Your team leader, Sandra, is nearby conducting a stock count. You must report the damaged goods to Sandra clearly, describe what you found, and follow correct quarantine procedure by placing the damaged pallet in the designated hold area. The simulated conversation is between you and Sandra, who you need to brief on the situation.'
   }
 ];
 
 export async function seedDatabase() {
   await initDatabase();
 
-  // ── 1. Seed all 5 Pathways ──────────────────────────────────
+  // ── 1. Seed all 6 Pathways ──────────────────────────────────
   for (const pathway of PATHWAYS) {
     const existing = await getQuery('SELECT id FROM pathways WHERE id = ?', [pathway.id]);
     if (!existing) {
@@ -97,7 +111,7 @@ export async function seedDatabase() {
     }
   }
 
-  // ── 2. Seed all 5 Simulations ───────────────────────────────
+  // ── 2. Seed all 6 Simulations ───────────────────────────────
   for (const sim of SIMULATIONS) {
     const existing = await getQuery('SELECT id FROM simulations WHERE id = ?', [sim.id]);
     if (!existing) {
@@ -233,5 +247,5 @@ export async function seedDatabase() {
     );
   }
 
-  console.log('[SEED] Database seeded successfully — 5 pathways, 5 simulations ready.');
+  console.log('[SEED] Database seeded successfully — 6 pathways, 6 simulations ready.');
 }

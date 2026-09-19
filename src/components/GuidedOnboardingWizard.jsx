@@ -3,12 +3,15 @@ import { api } from '../services/api';
 
 // ── Track metadata for the redirect UI ──────────────────────
 const TRACK_CARDS = [
-  { id: 'pathway-admin-asst',     name: 'Administrative Assistant',        icon: 'admin_panel_settings', color: '#4f8ef7' },
-  { id: 'pathway-health-support', name: 'Health & Social Care Support',     icon: 'health_and_safety',    color: '#34a07a' },
-  { id: 'pathway-retail-customer',name: 'Retail & Customer Service',        icon: 'storefront',            color: '#e87a2e' },
-  { id: 'pathway-hospitality',    name: 'Hospitality & Catering Assistant', icon: 'restaurant',            color: '#9b59b6' },
-  { id: 'pathway-cleaning-fm',    name: 'Cleaning & Facilities Management', icon: 'cleaning_services',     color: '#17a589' },
+  { id: 'pathway-admin-asst',        name: 'Administrative Assistant',        icon: 'admin_panel_settings', color: '#4f8ef7' },
+  { id: 'pathway-health-support',    name: 'Health & Social Care Support',     icon: 'health_and_safety',    color: '#34a07a' },
+  { id: 'pathway-retail-customer',   name: 'Retail & Customer Service',        icon: 'storefront',            color: '#e87a2e' },
+  { id: 'pathway-hospitality',       name: 'Hospitality & Catering Assistant', icon: 'restaurant',            color: '#9b59b6' },
+  { id: 'pathway-cleaning-fm',       name: 'Cleaning & Facilities Management', icon: 'cleaning_services',     color: '#17a589' },
+  { id: 'pathway-warehouse-logistics', name: 'Warehousing & Logistics Assistant', icon: 'warehouse',          color: '#c0932e' },
 ];
+
+const CONFIDENCE_COLORS = { high: '#34a07a', medium: '#4f8ef7', low: '#9b59b6' };
 
 const QUESTIONS = [
   {
@@ -20,7 +23,8 @@ const QUESTIONS = [
       "Healthcare or care home support",
       "Shop, supermarket, or customer service",
       "Hotel, restaurant, or catering",
-      "Cleaning or building services"
+      "Cleaning or building services",
+      "Warehouse, logistics, or delivery work"
     ]
   },
   {
@@ -32,6 +36,7 @@ const QUESTIONS = [
       "Care or healthcare-related role",
       "Customer or public-facing role",
       "Community or charity organisation",
+      "Warehouse, packing, or delivery work",
       "No formal work experience yet"
     ]
   },
@@ -52,6 +57,39 @@ const QUESTIONS = [
     prompt: "When would you be available to start work?",
     subtitle: "Let us know your general timeline and availability.",
     options: ["Immediately", "Within 2 weeks", "Within 1 month", "Flexible / Part-time"]
+  },
+  {
+    id: 6,
+    prompt: "How do you feel about physical or active work environments?",
+    subtitle: "For example, being on your feet all day, lifting, or working in warehouses and outdoor settings.",
+    options: [
+      "I enjoy physical and active work",
+      "I'm comfortable with some physical activity",
+      "I prefer a desk-based or seated role",
+      "I have health considerations to discuss with an employer"
+    ]
+  },
+  {
+    id: 7,
+    prompt: "Do you enjoy helping, supporting, or caring for other people?",
+    subtitle: "This could be in a professional, community, or family context.",
+    options: [
+      "Yes, helping people is one of my main motivations",
+      "I enjoy it but it's not my primary focus",
+      "I prefer working with tasks, systems, or products rather than people",
+      "I haven't had much experience but I'm open to it"
+    ]
+  },
+  {
+    id: 8,
+    prompt: "How confident are you handling money, counting change, or working with numbers day-to-day?",
+    subtitle: "For example, operating a till, processing payments, or managing stock quantities.",
+    options: [
+      "Very confident — I've handled cash or financial tasks before",
+      "Moderately confident — I can manage with some guidance",
+      "I prefer roles that don't involve money handling",
+      "I'd like to develop this skill"
+    ]
   }
 ];
 
@@ -77,6 +115,14 @@ export default function GuidedOnboardingWizard({ userEmail, currentLang, onCompl
 
   // Tentative track shown during onboarding
   const [tentativeTrack, setTentativeTrack] = useState(null);
+
+  // Multi-recommendation selection state
+  const [selectedRecommendation, setSelectedRecommendation] = useState(null);
+  const [isConfirmingChoice, setIsConfirmingChoice] = useState(false);
+
+  // Consent checkbox state
+  const [consentGiven, setConsentGiven] = useState(false);
+  const [showConsentGate, setShowConsentGate] = useState(false);
 
   const recognitionRef = useRef(null);
   const currentQ = QUESTIONS[currentQIndex];
@@ -104,7 +150,6 @@ export default function GuidedOnboardingWizard({ userEmail, currentLang, onCompl
   }, [userEmail, currentLang]);
 
   // ── Best-voice TTS helper ──────────────────────────────────
-  // Returns a Promise that resolves when speech has finished
   const speakText = (text, onDone) => {
     if (!('speechSynthesis' in window)) {
       if (onDone) onDone();
@@ -114,20 +159,18 @@ export default function GuidedOnboardingWizard({ userEmail, currentLang, onCompl
 
     const utterance = new SpeechSynthesisUtterance(text);
 
-    // Pick the best available voice
     const pickVoice = () => {
       const voices = window.speechSynthesis.getVoices();
       const lang = currentLang === 'ar' ? 'ar' : currentLang === 'fr' ? 'fr' : 'en';
 
-      // Priority order of preferred voice name fragments
       const preferred = [
         'Google UK English Female',
         'Google UK English Male',
         'Microsoft Libby',
         'Microsoft Sonia',
         'Microsoft Mia',
-        'Karen',       // macOS
-        'Samantha',    // macOS
+        'Karen',
+        'Samantha',
         'Google US English',
       ];
 
@@ -135,7 +178,6 @@ export default function GuidedOnboardingWizard({ userEmail, currentLang, onCompl
         const match = voices.find(v => v.name.includes(name));
         if (match) return match;
       }
-      // Fallback: any voice matching the lang
       return voices.find(v => v.lang.startsWith(lang)) || voices[0] || null;
     };
 
@@ -143,15 +185,14 @@ export default function GuidedOnboardingWizard({ userEmail, currentLang, onCompl
       const voice = pickVoice();
       if (voice) utterance.voice = voice;
       utterance.lang = currentLang === 'ar' ? 'ar-SA' : currentLang === 'fr' ? 'fr-FR' : 'en-GB';
-      utterance.rate = 0.88;   // slightly slower = more natural, easier to follow
-      utterance.pitch = 1.05;  // slightly warmer
+      utterance.rate = 0.88;
+      utterance.pitch = 1.05;
       utterance.volume = 1.0;
       utterance.onend = () => { if (onDone) onDone(); };
       utterance.onerror = () => { if (onDone) onDone(); };
       window.speechSynthesis.speak(utterance);
     };
 
-    // Voices may not be loaded yet on first call
     if (window.speechSynthesis.getVoices().length > 0) {
       applyVoiceAndSpeak();
     } else {
@@ -161,7 +202,6 @@ export default function GuidedOnboardingWizard({ userEmail, currentLang, onCompl
       };
     }
   };
-
 
   // ── Start voice recording ─────────────────────────────────
   const startRecording = () => {
@@ -197,64 +237,65 @@ export default function GuidedOnboardingWizard({ userEmail, currentLang, onCompl
   };
 
   // ── Fetch real-time AI feedback and drive progression ──────
-  // Returns true if redirect is needed, false otherwise
   const fetchAIFeedbackAndAdvance = async (answer, isLastQuestion) => {
     setIsFetchingFeedback(true);
     setAiFeedback(null);
-    let redirectNeeded = false;
 
     try {
-      const feedback = await api.getOnboardingFeedback(currentQ.prompt, answer, currentQIndex);
+      // Pass the current tentative track so the AI can be cautious
+      const feedback = await api.getOnboardingFeedback(
+        currentQ.prompt,
+        answer,
+        currentQIndex,
+        tentativeTrack?.id || null
+      );
       setAiFeedback(feedback);
-      redirectNeeded = feedback.redirect_needed;
 
       if (feedback.redirect_needed) {
         setShowRedirect(true);
         speakText("I can see you have big ambitions! BloomingPath supports specific pathways for people in the UK. Let me show you what we can help with.");
-        // Redirect screen stays until user explicitly dismisses it — don't advance
         return;
       }
 
+      // Only update tentative track if AI explicitly returns a new one
       if (feedback.tentative_track_name) {
         setTentativeTrack({ id: feedback.tentative_track_id, name: feedback.tentative_track_name });
       }
 
-      const reactionText = feedback.reaction || 'Thank you! Let\'s continue.';
+      const reactionText = feedback.reaction || "Thank you! Let's continue.";
 
       if (isLastQuestion) {
-        // Speak reaction, then complete onboarding after TTS finishes
-        speakText(reactionText, async () => {
-          try {
-            const result = await api.completeOnboardingSession(sessionId);
-            setAlignmentResult(result);
-            setAiFeedback(null);
-          } catch (err) {
-            console.error('Failed to complete onboarding:', err);
-          }
+        // Speak reaction, then show consent gate before completing
+        speakText(reactionText, () => {
+          setShowConsentGate(true);
         });
       } else {
-        // Speak reaction — show Continue button, don't auto-advance until TTS done
-        // We let utterance.onend trigger the advance via state
         speakText(reactionText, () => {
-          // TTS finished — show the Continue button (readyToAdvance state)
           setReadyToAdvance(true);
         });
       }
     } catch (err) {
       console.error('AI feedback error:', err);
-      // On error: advance normally without AI feedback
       if (!isLastQuestion) {
         setReadyToAdvance(true);
       } else {
-        try {
-          const result = await api.completeOnboardingSession(sessionId);
-          setAlignmentResult(result);
-        } catch (e) {
-          console.error('Failed to complete onboarding after AI error:', e);
-        }
+        setShowConsentGate(true);
       }
     } finally {
       setIsFetchingFeedback(false);
+    }
+  };
+
+  // ── Complete onboarding after consent ─────────────────────
+  const handleCompleteOnboarding = async () => {
+    if (!consentGiven) return;
+    try {
+      const result = await api.completeOnboardingSession(sessionId);
+      setAlignmentResult(result);
+      setAiFeedback(null);
+      setShowConsentGate(false);
+    } catch (err) {
+      console.error('Failed to complete onboarding:', err);
     }
   };
 
@@ -267,20 +308,16 @@ export default function GuidedOnboardingWizard({ userEmail, currentLang, onCompl
     setReadyToAdvance(false);
 
     try {
-      // Record interaction in backend
       await api.recordOnboardingInteraction(
         sessionId, individual.id, inputMode,
         currentQ.prompt, finalAnswer, finalAnswer
       );
 
-      // Reset input states
       setVoiceState('READY');
       setTranscriptText('');
       setTextInput('');
 
       const isLastQuestion = currentQIndex >= QUESTIONS.length - 1;
-
-      // Fetch AI feedback — this drives progression when TTS finishes
       await fetchAIFeedbackAndAdvance(finalAnswer, isLastQuestion);
     } catch (err) {
       console.error('Failed to submit onboarding answer:', err);
@@ -289,9 +326,9 @@ export default function GuidedOnboardingWizard({ userEmail, currentLang, onCompl
     }
   };
 
-  // ── Advance to next question (called by Continue button) ───
+  // ── Advance to next question ───────────────────────────────
   const handleAdvance = () => {
-    window.speechSynthesis.cancel(); // Stop any ongoing speech
+    window.speechSynthesis.cancel();
     setReadyToAdvance(false);
     setCurrentQIndex(prev => prev + 1);
     setAiFeedback(null);
@@ -305,6 +342,34 @@ export default function GuidedOnboardingWizard({ userEmail, currentLang, onCompl
     setVoiceState('READY');
     setTranscriptText('');
     setTextInput('');
+  };
+
+  // ── Choose a recommendation from the multi-rec screen ─────
+  const handleChooseRecommendation = async (recommendation) => {
+    if (!individual || isConfirmingChoice) return;
+    setIsConfirmingChoice(true);
+    try {
+      await api.assignPathway(individual.id, recommendation.pathway_id);
+      // Build a synthetic alignmentResult compatible with AlignmentResultScreen
+      // using only the chosen recommendation's data
+      const chosen = {
+        ...alignmentResult,
+        assigned_pathway: {
+          id: recommendation.pathway_id,
+          name: recommendation.pathway_name,
+          description: alignmentResult?.assigned_pathway?.description || '',
+        },
+        pathway_alignment: {
+          pathway_name: recommendation.pathway_name,
+          reasons: recommendation.reasons,
+        }
+      };
+      setSelectedRecommendation(chosen);
+    } catch (err) {
+      console.error('Failed to assign chosen pathway:', err);
+    } finally {
+      setIsConfirmingChoice(false);
+    }
   };
 
   // ── Track card helper ─────────────────────────────────────
@@ -328,12 +393,22 @@ export default function GuidedOnboardingWizard({ userEmail, currentLang, onCompl
           )}
         </div>
 
-        {/* ── ALIGNMENT RESULT SCREEN ── */}
-        {alignmentResult ? (
+        {/* ── CHOSEN PATHWAY CONFIRMATION ── */}
+        {selectedRecommendation ? (
           <AlignmentResultScreen
-            alignmentResult={alignmentResult}
-            onEnterPortal={() => onCompleteOnboarding(alignmentResult.assigned_pathway.id)}
+            alignmentResult={selectedRecommendation}
+            onEnterPortal={() => onCompleteOnboarding(selectedRecommendation.assigned_pathway.id)}
             getTrackCard={getTrackCard}
+            speakText={speakText}
+          />
+
+        ) : alignmentResult ? (
+          /* ── MULTI-RECOMMENDATION SCREEN ── */
+          <MultiRecommendationScreen
+            alignmentResult={alignmentResult}
+            getTrackCard={getTrackCard}
+            onChoose={handleChooseRecommendation}
+            isConfirming={isConfirmingChoice}
             speakText={speakText}
           />
 
@@ -342,6 +417,15 @@ export default function GuidedOnboardingWizard({ userEmail, currentLang, onCompl
           <RedirectScreen
             redirectMessage={aiFeedback.redirect_message}
             onContinue={handleDismissRedirect}
+          />
+
+        ) : showConsentGate ? (
+          /* ── CONSENT GATE ── */
+          <ConsentGateScreen
+            consentGiven={consentGiven}
+            setConsentGiven={setConsentGiven}
+            onComplete={handleCompleteOnboarding}
+            aiFeedback={aiFeedback}
           />
 
         ) : (
@@ -366,7 +450,7 @@ export default function GuidedOnboardingWizard({ userEmail, currentLang, onCompl
             {tentativeTrack && (
               <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-secondary-container/40 border border-secondary/20 text-xs">
                 <span className="material-symbols-outlined text-secondary text-[16px]">auto_awesome</span>
-                <span className="text-on-surface-variant">AI is leaning towards: <strong className="text-on-surface">{tentativeTrack.name}</strong></span>
+                <span className="text-on-surface-variant">AI is starting to lean towards: <strong className="text-on-surface">{tentativeTrack.name}</strong></span>
               </div>
             )}
 
@@ -407,7 +491,6 @@ export default function GuidedOnboardingWizard({ userEmail, currentLang, onCompl
                     <p className="text-[11px] font-bold text-secondary uppercase tracking-wider mb-1">AI Guide</p>
                     <p className="text-sm text-on-surface leading-relaxed">{aiFeedback.reaction}</p>
                   </div>
-                  {/* Speaking indicator */}
                   {!readyToAdvance && (
                     <div className="flex items-center gap-1 shrink-0 pt-1">
                       <span className="w-1.5 h-3 bg-secondary/60 rounded-full animate-bounce" style={{animationDelay:'0ms'}} />
@@ -416,7 +499,6 @@ export default function GuidedOnboardingWizard({ userEmail, currentLang, onCompl
                     </div>
                   )}
                 </div>
-                {/* Continue button appears once TTS has finished */}
                 {readyToAdvance && (
                   <button
                     onClick={handleAdvance}
@@ -583,6 +665,239 @@ export default function GuidedOnboardingWizard({ userEmail, currentLang, onCompl
 
 // ── Subcomponents ────────────────────────────────────────────
 
+function ConsentGateScreen({ consentGiven, setConsentGiven, onComplete, aiFeedback }) {
+  const [isCompleting, setIsCompleting] = useState(false);
+
+  const handleComplete = async () => {
+    if (!consentGiven) return;
+    setIsCompleting(true);
+    await onComplete();
+    setIsCompleting(false);
+  };
+
+  return (
+    <div className="space-y-6 animate-fadeIn">
+      {/* AI Feedback Summary */}
+      {aiFeedback?.reaction && (
+        <div className="flex items-start gap-3 p-4 rounded-2xl bg-secondary-container/30 border border-secondary/20">
+          <div className="w-9 h-9 rounded-full bg-secondary-container flex items-center justify-center shrink-0">
+            <span className="material-symbols-outlined text-secondary text-[20px]">smart_toy</span>
+          </div>
+          <div className="flex-1">
+            <p className="text-[11px] font-bold text-secondary uppercase tracking-wider mb-1">AI Guide</p>
+            <p className="text-sm text-on-surface leading-relaxed">{aiFeedback.reaction}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Section Title */}
+      <div className="text-center space-y-2">
+        <div className="w-14 h-14 rounded-full bg-primary-container/30 border-2 border-primary/30 flex items-center justify-center mx-auto">
+          <span className="material-symbols-outlined text-primary text-[28px]">verified_user</span>
+        </div>
+        <h2 className="text-xl font-bold text-on-surface">Almost there!</h2>
+        <p className="text-xs text-on-surface-variant max-w-sm mx-auto">
+          Before we finalise your pathway, we need your permission to share your readiness profile with potential employers and training institutions.
+        </p>
+      </div>
+
+      {/* Consent Details Box */}
+      <div className="p-5 rounded-2xl bg-surface-container-low border border-outline-variant space-y-4">
+        <h4 className="text-xs font-bold text-primary uppercase tracking-wider flex items-center gap-1.5">
+          <span className="material-symbols-outlined text-[16px]">info</span>
+          What will be shared?
+        </h4>
+        <ul className="space-y-2.5">
+          {[
+            { icon: 'route', text: 'Your assigned career pathway and readiness signal' },
+            { icon: 'analytics', text: 'Capability evidence generated from workplace simulations' },
+            { icon: 'business', text: 'Your availability and employment interests' },
+            { icon: 'person', text: 'Your display name and contact email for employer outreach' },
+          ].map((item, i) => (
+            <li key={i} className="flex items-start gap-2.5 text-xs text-on-surface">
+              <span className="material-symbols-outlined text-secondary text-[16px] shrink-0 mt-0.5">{item.icon}</span>
+              <span>{item.text}</span>
+            </li>
+          ))}
+        </ul>
+        <div className="pt-2 border-t border-outline-variant text-[11px] text-on-surface-variant">
+          Your data will only be shared with verified employers and training institutions on the BloomingPath platform. You can withdraw consent at any time from your profile settings.
+        </div>
+      </div>
+
+      {/* Required Consent Checkbox */}
+      <label
+        htmlFor="consent-checkbox"
+        className={`flex items-start gap-3 p-4 rounded-2xl border-2 cursor-pointer transition-all ${
+          consentGiven
+            ? 'border-primary bg-primary-container/20'
+            : 'border-outline-variant bg-surface-container-low hover:border-primary/50'
+        }`}
+      >
+        <div className="relative mt-0.5 shrink-0">
+          <input
+            id="consent-checkbox"
+            type="checkbox"
+            checked={consentGiven}
+            onChange={(e) => setConsentGiven(e.target.checked)}
+            className="sr-only"
+          />
+          <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${
+            consentGiven ? 'bg-primary border-primary' : 'border-outline bg-surface-container-lowest'
+          }`}>
+            {consentGiven && <span className="material-symbols-outlined text-on-primary text-[14px]">check</span>}
+          </div>
+        </div>
+        <div className="flex-1">
+          <p className="text-xs font-bold text-on-surface">
+            I consent to my data being shared with verified employers and institutions on BloomingPath
+            <span className="text-error ml-1">*</span>
+          </p>
+          <p className="text-[11px] text-on-surface-variant mt-1">
+            Required to complete onboarding and access your personalised pathway.
+          </p>
+        </div>
+      </label>
+
+      {!consentGiven && (
+        <p className="text-xs text-on-surface-variant text-center flex items-center justify-center gap-1">
+          <span className="material-symbols-outlined text-[14px] text-error">error</span>
+          Please tick the consent box above to continue.
+        </p>
+      )}
+
+      <button
+        onClick={handleComplete}
+        disabled={!consentGiven || isCompleting}
+        className="w-full py-3.5 rounded-xl bg-primary text-on-primary font-bold text-sm hover:opacity-90 transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+      >
+        {isCompleting
+          ? <><span className="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>Finding your pathways...</>
+          : <><span className="material-symbols-outlined text-[18px]">auto_awesome</span>See My Pathway Recommendations</>
+        }
+      </button>
+    </div>
+  );
+}
+
+function MultiRecommendationScreen({ alignmentResult, getTrackCard, onChoose, isConfirming, speakText }) {
+  const recommendations = alignmentResult?.pathway_recommendations || [];
+  const [hovered, setHovered] = useState(null);
+
+  useEffect(() => {
+    speakText("Great news! Based on your answers, we've found some excellent pathway matches for you. Take a look and choose the one that feels right.");
+  }, []);
+
+  return (
+    <div className="space-y-6 animate-fadeIn">
+      {/* Header */}
+      <div className="text-center space-y-2">
+        <div className="w-16 h-16 rounded-full bg-secondary-container/30 border-2 border-secondary/30 flex items-center justify-center mx-auto">
+          <span className="material-symbols-outlined text-secondary text-[32px]">auto_awesome</span>
+        </div>
+        <span className="px-3 py-1 rounded-full bg-secondary-container/40 text-secondary text-xs font-bold uppercase tracking-wider inline-block">
+          Pathway Recommendations
+        </span>
+        <h2 className="text-xl font-bold text-on-surface">Here's what we found for you</h2>
+        <p className="text-xs text-on-surface-variant max-w-md mx-auto">
+          Based on everything you shared, these pathways are a strong fit. Read the reasons below and choose the one that feels right for you.
+        </p>
+      </div>
+
+      {/* Recommendation Cards */}
+      <div className="space-y-4">
+        {(recommendations.length > 0 ? recommendations : [
+          {
+            pathway_id: alignmentResult?.assigned_pathway?.id,
+            pathway_name: alignmentResult?.assigned_pathway?.name,
+            confidence: 'high',
+            reasons: alignmentResult?.pathway_alignment?.reasons || []
+          }
+        ]).map((rec, idx) => {
+          const trackCard = getTrackCard(rec.pathway_id);
+          const color = trackCard?.color || '#4f8ef7';
+          const icon = trackCard?.icon || 'route';
+          const confColor = CONFIDENCE_COLORS[rec.confidence] || '#4f8ef7';
+          const rankLabels = ['Best Match', 'Strong Alternative', 'Also Consider'];
+
+          return (
+            <div
+              key={rec.pathway_id}
+              className="rounded-2xl border-2 p-5 space-y-4 transition-all duration-200 cursor-pointer"
+              style={{
+                borderColor: hovered === idx ? color : `${color}44`,
+                background: `${color}08`
+              }}
+              onMouseEnter={() => setHovered(idx)}
+              onMouseLeave={() => setHovered(null)}
+            >
+              {/* Card Header */}
+              <div className="flex items-start gap-3">
+                <div
+                  className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
+                  style={{ background: `${color}22` }}
+                >
+                  <span className="material-symbols-outlined text-[24px]" style={{ color }}>{icon}</span>
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span
+                      className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider"
+                      style={{ background: `${color}22`, color }}
+                    >
+                      {rankLabels[idx] || `Option ${idx + 1}`}
+                    </span>
+                    <span
+                      className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider"
+                      style={{ background: `${confColor}22`, color: confColor }}
+                    >
+                      {rec.confidence} confidence
+                    </span>
+                  </div>
+                  <h3 className="text-base font-bold text-on-surface mt-1">{rec.pathway_name}</h3>
+                </div>
+              </div>
+
+              {/* Why We Thought of This */}
+              <div className="space-y-2">
+                <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[14px]" style={{ color }}>verified</span>
+                  Why we thought of this for you
+                </p>
+                <ul className="space-y-1.5">
+                  {(rec.reasons || []).map((reason, rIdx) => (
+                    <li key={rIdx} className="flex items-start gap-2 text-xs text-on-surface">
+                      <span className="material-symbols-outlined text-[14px] shrink-0 mt-0.5" style={{ color }}>check_circle</span>
+                      <span>{reason}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* Choose Button */}
+              <button
+                onClick={() => onChoose(rec)}
+                disabled={isConfirming}
+                className="w-full py-2.5 rounded-xl font-bold text-xs hover:opacity-90 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                style={{ background: color, color: '#fff' }}
+              >
+                {isConfirming
+                  ? <><span className="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>Confirming...</>
+                  : <><span className="material-symbols-outlined text-[16px]">arrow_forward</span>Choose This Pathway</>
+                }
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
+      <p className="text-[11px] text-on-surface-variant text-center px-4">
+        Don't worry — you can discuss your pathway choice with a BloomingPath advisor at any time. Your profile can be updated as your experience grows.
+      </p>
+    </div>
+  );
+}
+
 function AlignmentResultScreen({ alignmentResult, onEnterPortal, getTrackCard, speakText }) {
   const trackCard = getTrackCard(alignmentResult?.assigned_pathway?.id);
   const trackColor = trackCard?.color || '#4f8ef7';
@@ -590,7 +905,7 @@ function AlignmentResultScreen({ alignmentResult, onEnterPortal, getTrackCard, s
 
   useEffect(() => {
     if (alignmentResult?.assigned_pathway?.name) {
-      speakText(`Great news! You've been matched to the ${alignmentResult.assigned_pathway.name} pathway. Let's get started.`);
+      speakText(`Excellent choice! You've chosen the ${alignmentResult.assigned_pathway.name} pathway. Let's get started on your journey.`);
     }
   }, []);
 
@@ -605,7 +920,7 @@ function AlignmentResultScreen({ alignmentResult, onEnterPortal, getTrackCard, s
 
       <div>
         <span className="px-3 py-1 rounded-full bg-secondary-container/40 text-secondary text-xs font-bold uppercase tracking-wider">
-          Pathway Alignment Complete
+          Pathway Confirmed
         </span>
         <h2 className="text-2xl font-bold text-on-surface mt-3">
           {alignmentResult.assigned_pathway.name}
@@ -621,7 +936,7 @@ function AlignmentResultScreen({ alignmentResult, onEnterPortal, getTrackCard, s
           Why This Pathway?
         </h4>
         <ul className="space-y-2">
-          {alignmentResult.pathway_alignment.reasons.map((reason, idx) => (
+          {(alignmentResult.pathway_alignment?.reasons || []).map((reason, idx) => (
             <li key={idx} className="text-xs text-on-surface flex items-start gap-2">
               <span className="material-symbols-outlined text-secondary text-[16px] shrink-0 mt-0.5">check_circle</span>
               <span>{reason}</span>
@@ -657,18 +972,12 @@ function RedirectScreen({ redirectMessage, onContinue }) {
           Let's find the right path for you
         </h2>
         <p className="text-xs text-on-surface-variant mt-1 max-w-md mx-auto">
-          BloomingPath is designed to help foreigners find accessible employment in the UK. We specialise in 5 pathways:
+          BloomingPath is designed to help foreigners find accessible employment in the UK. We specialise in 6 pathways:
         </p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left">
-        {[
-          { id: 'pathway-admin-asst',      name: 'Administrative Assistant',        icon: 'admin_panel_settings', color: '#4f8ef7' },
-          { id: 'pathway-health-support',  name: 'Health & Social Care Support',     icon: 'health_and_safety',    color: '#34a07a' },
-          { id: 'pathway-retail-customer', name: 'Retail & Customer Service',        icon: 'storefront',            color: '#e87a2e' },
-          { id: 'pathway-hospitality',     name: 'Hospitality & Catering',           icon: 'restaurant',            color: '#9b59b6' },
-          { id: 'pathway-cleaning-fm',     name: 'Cleaning & Facilities',            icon: 'cleaning_services',     color: '#17a589' },
-        ].map(track => (
+        {TRACK_CARDS.map(track => (
           <div
             key={track.id}
             className="flex items-center gap-3 p-3 rounded-xl border border-outline-variant bg-surface-container-low"

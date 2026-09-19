@@ -39,6 +39,12 @@ const AVAILABLE_TRACKS = [
     name: 'Cleaning & Facilities Management',
     keywords: ['cleaning', 'cleaner', 'facilities', 'janitor', 'caretaker', 'maintenance', 'building', 'porter', 'housekeeping'],
     description: 'Commercial cleaning operative, building services, facilities support'
+  },
+  {
+    id: 'pathway-warehouse-logistics',
+    name: 'Warehousing & Logistics Assistant',
+    keywords: ['warehouse', 'logistics', 'stock', 'packing', 'picking', 'delivery', 'distribution', 'forklift', 'depot', 'goods', 'loading', 'physical', 'manual'],
+    description: 'Stock picking, packing, goods-in/goods-out, warehouse operations in UK distribution and logistics'
   }
 ];
 
@@ -109,9 +115,13 @@ export class AIProvider {
    * Called after each question is answered to give real-time conversational feedback.
    * Also detects out-of-scope career goals and gently redirects.
    */
-  async getOnboardingFeedback(questionPrompt, answer, questionIndex) {
+  async getOnboardingFeedback(questionPrompt, answer, questionIndex, previousTentativeTrackId = null) {
     if (AI_MODE === 'live' && GEMINI_API_KEY) {
       try {
+        const prevTrackNote = previousTentativeTrackId
+          ? `The AI has so far been leaning towards track: "${previousTentativeTrackId}". Only change this lean if the new answer provides a STRONG, direct signal that overrides multiple previous signals — do NOT flip based on a single answer like computer proficiency alone.`
+          : 'No tentative track has been set yet.';
+
         const prompt = `
 You are a warm, encouraging AI career guide for BloomingPath — a UK employment readiness platform that helps foreigners find accessible employment in the UK.
 
@@ -119,13 +129,15 @@ The user is answering onboarding question ${questionIndex + 1}:
 QUESTION: "${questionPrompt}"
 USER'S ANSWER: "${answer}"
 
-The 5 available employment tracks are:
+The 6 available employment tracks are:
 ${TRACKS_SUMMARY}
 
+CURRENT CONTEXT: ${prevTrackNote}
+
 IMPORTANT RULES:
-1. If the user's answer mentions a career that is OUT OF SCOPE for BloomingPath (e.g. footballer, doctor, lawyer, engineer, teacher, pilot, scientist, accountant, actor, singer), set redirect_needed to true and provide a warm, supportive redirect_message that explains what BloomingPath is for and lists the 5 available tracks.
-2. If the answer is appropriate, give a short, warm, conversational reaction (1-2 sentences) that acknowledges their answer and, if possible, hints at which track might suit them.
-3. The tentative_track should be the most likely track based on the answer so far, or null if unclear.
+1. If the user's answer mentions a career OUT OF SCOPE for BloomingPath (e.g. footballer, doctor, lawyer, engineer, teacher, pilot, scientist, accountant, actor, singer), set redirect_needed to true and provide a warm redirect_message listing the 6 available tracks.
+2. If the answer is appropriate, give a short warm conversational reaction (1-2 sentences) acknowledging their answer.
+3. CAUTION — Track Recommendation Rule: Do NOT change the tentative_track based on a single signal that is ambiguous (e.g. saying "I'm good with computers" alone should NOT override a previously established care/health preference). Only update tentative_track if the new answer provides a DOMINANT, unambiguous signal that clearly points to a DIFFERENT track AND the previous signal was weak. When in doubt, keep the previous tentative track or return null. Use hedging language like "this is starting to suggest..." rather than being definitive.
 4. Keep tone encouraging, human, friendly — not robotic.
 
 Return ONLY valid JSON:
@@ -155,7 +167,7 @@ Return ONLY valid JSON:
         tentative_track_id: null,
         tentative_track_name: null,
         redirect_needed: true,
-        redirect_message: `BloomingPath is designed to help foreigners find accessible employment in the UK. We currently support 5 pathways:\n\n${AVAILABLE_TRACKS.map(t => `• ${t.name} — ${t.description}`).join('\n')}\n\nLet's find the best fit for your skills and experience!`
+        redirect_message: `BloomingPath is designed to help foreigners find accessible employment in the UK. We currently support 6 pathways:\n\n${AVAILABLE_TRACKS.map(t => `• ${t.name} — ${t.description}`).join('\n')}\n\nLet's find the best fit for your skills and experience!`
       };
     }
 
@@ -163,12 +175,15 @@ Return ONLY valid JSON:
       track.keywords.some(kw => lowerAnswer.includes(kw))
     );
 
+    // Cautious fallback: only update tentative if the previous was null or a strong direct match
+    const resolvedTrack = (!previousTentativeTrackId || matchedTrack) ? matchedTrack : null;
+
     return {
-      reaction: matchedTrack
-        ? `That's great! Based on what you've said, ${matchedTrack.name} could be a wonderful fit for you. Let me ask a couple more questions to make sure.`
-        : "Thank you for sharing that! Every bit of experience counts. Let's keep going to find your ideal pathway.",
-      tentative_track_id: matchedTrack?.id || null,
-      tentative_track_name: matchedTrack?.name || null,
+      reaction: resolvedTrack
+        ? `That's helpful to know! Based on what you've shared so far, ${resolvedTrack.name} could be a great direction for you — let's keep exploring.`
+        : "Thank you for sharing that! Every bit of experience and preference helps us understand your best path. Let's continue.",
+      tentative_track_id: resolvedTrack?.id || previousTentativeTrackId || null,
+      tentative_track_name: resolvedTrack?.name || (previousTentativeTrackId ? AVAILABLE_TRACKS.find(t => t.id === previousTentativeTrackId)?.name : null) || null,
       redirect_needed: false,
       redirect_message: null
     };
@@ -187,18 +202,19 @@ Return ONLY valid JSON:
         const prompt = `
 You are an AI workforce intelligence system for BloomingPath — a UK employment readiness platform for foreigners seeking accessible employment.
 
-Extract structured profile signals from these onboarding responses and assign the most suitable pathway:
+Extract structured profile signals from these onboarding responses and recommend the most suitable pathways:
 
 ${transcriptText}
 
-The 5 available pathways are:
+The 6 available pathways are:
 ${TRACKS_SUMMARY}
 
 IMPORTANT ASSIGNMENT RULES:
-- Assign the pathway that BEST matches the candidate's stated interests, experience, and skills.
-- If the candidate mentioned something out of scope (footballer, doctor, lawyer, etc.), redirect them to the closest available track based on transferable skills.
-- assigned_pathway_id MUST be one of: pathway-admin-asst, pathway-health-support, pathway-retail-customer, pathway-hospitality, pathway-cleaning-fm
+- Consider ALL answers holistically. Do NOT let a single answer (e.g. digital proficiency) dominate over multiple other signals.
+- Rank the top 2-3 pathways that best match the candidate's full profile.
+- assigned_pathway_id MUST be one of: pathway-admin-asst, pathway-health-support, pathway-retail-customer, pathway-hospitality, pathway-cleaning-fm, pathway-warehouse-logistics
 - pathway_alignment_reasons should be 3-4 specific, personalised reasons referencing their actual answers.
+- pathway_recommendations must list 2-3 top pathways in order of fit (best first), each with reasons tailored to the candidate's answers.
 
 Return ONLY valid JSON:
 {
@@ -214,11 +230,26 @@ Return ONLY valid JSON:
     "Builds on previous exposure",
     "Aligns with communication strengths",
     "Digital confidence identified as an area to develop"
+  ],
+  "pathway_recommendations": [
+    {
+      "pathway_id": "pathway-admin-asst",
+      "pathway_name": "Administrative Assistant",
+      "confidence": "high",
+      "reasons": ["You mentioned enjoying office environments", "Your scheduling experience aligns with admin roles"]
+    },
+    {
+      "pathway_id": "pathway-health-support",
+      "pathway_name": "Health & Social Care Support",
+      "confidence": "medium",
+      "reasons": ["You expressed a desire to help people directly", "Community volunteering shows care orientation"]
+    }
   ]
 }
 
 Values for communication_confidence and digital_confidence: "high" | "moderate" | "developing"
 Values for availability: "immediate" | "within_2_weeks" | "flexible"
+Values for confidence in recommendations: "high" | "medium" | "low"
         `.trim();
 
         const result = await callGemini('extractOnboardingSignals', prompt);
@@ -237,9 +268,46 @@ Values for availability: "immediate" | "within_2_weeks" | "flexible"
     }));
     trackScores.sort((a, b) => b.score - a.score);
     const best = trackScores[0].track;
+    const second = trackScores[1]?.track;
+    const third = trackScores[2]?.track;
 
     const hasPriorWork = combinedText.includes('work') || combinedText.includes('volunteer') || combinedText.includes('experience') || combinedText.includes('yes');
     const isHighComm = combinedText.includes('very confident') || combinedText.includes('confident') || combinedText.includes('good') || combinedText.includes('enjoy');
+
+    const recommendations = [
+      {
+        pathway_id: best.id,
+        pathway_name: best.name,
+        confidence: 'high',
+        reasons: [
+          `Matches stated interest in ${best.name.toLowerCase()} work`,
+          hasPriorWork ? 'Builds on your previous workplace or volunteer exposure' : 'Identified strong foundational interest in this sector',
+          'Aligns with the communication and personal strengths you described'
+        ]
+      }
+    ];
+    if (second) {
+      recommendations.push({
+        pathway_id: second.id,
+        pathway_name: second.name,
+        confidence: 'medium',
+        reasons: [
+          `Some of your answers also point towards ${second.name.toLowerCase()}`,
+          'This could be a strong alternative pathway for you to consider'
+        ]
+      });
+    }
+    if (third && trackScores[2]?.score > 0) {
+      recommendations.push({
+        pathway_id: third.id,
+        pathway_name: third.name,
+        confidence: 'low',
+        reasons: [
+          `A few signals from your answers touched on ${third.name.toLowerCase()}`,
+          'Worth exploring if the top options don\'t feel right'
+        ]
+      });
+    }
 
     return {
       prior_work_exposure: hasPriorWork,
@@ -254,7 +322,8 @@ Values for availability: "immediate" | "within_2_weeks" | "flexible"
         hasPriorWork ? 'Builds on previous workplace or volunteer exposure' : 'Identified foundational interest in this sector',
         'Aligns with communication confidence signals from onboarding',
         'Digital confidence identified as key capability area to develop'
-      ]
+      ],
+      pathway_recommendations: recommendations
     };
   }
 

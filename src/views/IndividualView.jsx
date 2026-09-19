@@ -3,15 +3,38 @@ import { api } from '../services/api';
 
 // Track metadata for dynamic theming
 const TRACK_META = {
-  'pathway-admin-asst':      { icon: 'admin_panel_settings', color: '#4f8ef7', accent: 'blue' },
-  'pathway-health-support':  { icon: 'health_and_safety',    color: '#34a07a', accent: 'green' },
-  'pathway-retail-customer': { icon: 'storefront',            color: '#e87a2e', accent: 'orange' },
-  'pathway-hospitality':     { icon: 'restaurant',            color: '#9b59b6', accent: 'purple' },
-  'pathway-cleaning-fm':     { icon: 'cleaning_services',     color: '#17a589', accent: 'teal' },
+  'pathway-admin-asst':         { icon: 'admin_panel_settings', color: '#4f8ef7', accent: 'blue' },
+  'pathway-health-support':     { icon: 'health_and_safety',    color: '#34a07a', accent: 'green' },
+  'pathway-retail-customer':    { icon: 'storefront',            color: '#e87a2e', accent: 'orange' },
+  'pathway-hospitality':        { icon: 'restaurant',            color: '#9b59b6', accent: 'purple' },
+  'pathway-cleaning-fm':        { icon: 'cleaning_services',     color: '#17a589', accent: 'teal' },
+  'pathway-warehouse-logistics':{ icon: 'warehouse',             color: '#c0932e', accent: 'amber' },
 };
 
+// ── Badge definitions ──────────────────────────────────────
+const BADGE_DEFINITIONS = [
+  // Onboarding badges
+  { id: 'bdg-first-steps',       category: 'Onboarding',   icon: 'spa',             name: 'First Steps',          desc: 'Completed the BloomingPath registration',                color: '#4f8ef7', earned: true,  earnedDate: 'Sep 2026' },
+  { id: 'bdg-pathway-chosen',    category: 'Onboarding',   icon: 'route',           name: 'Pathway Chosen',       desc: 'Completed onboarding and received a pathway match',       color: '#34a07a', earned: true,  earnedDate: 'Sep 2026' },
+  { id: 'bdg-voice-pioneer',     category: 'Onboarding',   icon: 'mic',             name: 'Voice Pioneer',        desc: 'Used voice mode to complete at least 3 onboarding answers', color: '#9b59b6', earned: false, earnedDate: null },
+  // Practice badges
+  { id: 'bdg-first-sim',        category: 'Practice',     icon: 'sports_esports',  name: 'First Simulation',     desc: 'Completed your first workplace simulation',               color: '#e87a2e', earned: true,  earnedDate: 'Sep 2026' },
+  { id: 'bdg-triple-turn',      category: 'Practice',     icon: '3p',              name: 'Triple Turn',          desc: 'Completed all 3 turns in a workplace simulation',         color: '#17a589', earned: true,  earnedDate: 'Sep 2026' },
+  { id: 'bdg-fluent-comm',      category: 'Practice',     icon: 'record_voice_over', name: 'Fluent Communicator', desc: 'Scored "demonstrated" in communication capability',       color: '#4f8ef7', earned: false, earnedDate: null },
+  { id: 'bdg-rapid-learner',    category: 'Practice',     icon: 'bolt',            name: 'Rapid Learner',        desc: 'Completed a simulation within 5 minutes',                 color: '#c0932e', earned: false, earnedDate: null },
+  // Readiness badges
+  { id: 'bdg-rising-star',      category: 'Readiness',    icon: 'star',            name: 'Rising Star',          desc: 'Achieved a "developing" overall readiness signal',        color: '#9b59b6', earned: true,  earnedDate: 'Sep 2026' },
+  { id: 'bdg-evidence-builder', category: 'Readiness',    icon: 'troubleshoot',    name: 'Evidence Builder',     desc: 'Generated 3 or more evidence records',                    color: '#34a07a', earned: true,  earnedDate: 'Sep 2026' },
+  { id: 'bdg-cap-demonstrated', category: 'Readiness',    icon: 'verified',        name: 'Capability Demonstrated', desc: 'Demonstrated 4+ capabilities in a single simulation',   color: '#4f8ef7', earned: false, earnedDate: null },
+  // Milestone badges
+  { id: 'bdg-profile-complete', category: 'Milestones',   icon: 'person_check',    name: 'Profile Complete',     desc: 'Filled in all profile fields',                            color: '#e87a2e', earned: false, earnedDate: null },
+  { id: 'bdg-data-shared',      category: 'Milestones',   icon: 'verified_user',   name: 'Data Shared',          desc: 'Consented to share your data with employers',             color: '#17a589', earned: true,  earnedDate: 'Sep 2026' },
+  { id: 'bdg-employer-ready',   category: 'Milestones',   icon: 'business_center', name: 'Employer Ready',       desc: 'Achieved "demonstrated" overall readiness signal',        color: '#c0932e', earned: false, earnedDate: null },
+  { id: 'bdg-7-day-streak',     category: 'Milestones',   icon: 'local_fire_department', name: '7-Day Streak',   desc: 'Logged in and practised for 7 consecutive days',          color: '#e87a2e', earned: false, earnedDate: null },
+];
+
 export default function IndividualView({ userEmail, currentLang, onOpenEvidenceTrail }) {
-  const [activeTab, setActiveTab] = useState('home'); // 'home', 'pathway', 'practice', 'readiness', 'evidence', 'profile'
+  const [activeTab, setActiveTab] = useState('home'); // 'home', 'pathway', 'practice', 'readiness', 'evidence', 'badges', 'profile'
   const [individual, setIndividual] = useState(null);
   const [readinessData, setReadinessData] = useState(null);
   const [evidenceList, setEvidenceList] = useState([]);
@@ -208,6 +231,7 @@ export default function IndividualView({ userEmail, currentLang, onOpenEvidenceT
             { id: 'practice', label: 'Workplace Practice', icon: 'sports_esports' },
             { id: 'readiness', label: 'Readiness', icon: 'analytics' },
             { id: 'evidence', label: 'Evidence', icon: 'troubleshoot' },
+            { id: 'badges', label: 'Badges', icon: 'military_tech' },
             { id: 'profile', label: 'Profile', icon: 'person' },
           ].map(tab => (
             <button
@@ -674,7 +698,144 @@ export default function IndividualView({ userEmail, currentLang, onOpenEvidenceT
         </div>
       )}
 
-      {/* ================= TAB 6: PROFILE ================= */}
+      {/* ================= TAB 6: BADGES ================= */}
+      {activeTab === 'badges' && (
+        <div className="space-y-6 animate-fadeIn">
+          {/* Header Banner */}
+          <div className="p-6 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative overflow-hidden"
+            style={{ background: 'linear-gradient(135deg, #9b59b618, #4f8ef710)', border: '1.5px solid #9b59b644' }}>
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ background: '#9b59b622' }}>
+                <span className="material-symbols-outlined text-[26px]" style={{ color: '#9b59b6' }}>military_tech</span>
+              </div>
+              <div>
+                <span className="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider mb-2 inline-block" style={{ background: '#9b59b622', color: '#9b59b6' }}>
+                  Achievement Gallery
+                </span>
+                <h2 className="text-2xl font-bold text-on-background">Your Badges</h2>
+                <p className="text-xs text-on-surface-variant mt-1">Keep practising to unlock more achievements and show employers your commitment.</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 shrink-0">
+              <div className="text-center">
+                <span className="text-3xl font-extrabold" style={{ color: '#9b59b6' }}>
+                  {BADGE_DEFINITIONS.filter(b => b.earned).length}
+                </span>
+                <p className="text-[11px] text-on-surface-variant">Earned</p>
+              </div>
+              <div className="w-px h-10 bg-outline-variant" />
+              <div className="text-center">
+                <span className="text-3xl font-extrabold text-on-surface-variant">
+                  {BADGE_DEFINITIONS.filter(b => !b.earned).length}
+                </span>
+                <p className="text-[11px] text-on-surface-variant">Locked</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Badge Categories */}
+          {['Onboarding', 'Practice', 'Readiness', 'Milestones'].map(category => {
+            const badges = BADGE_DEFINITIONS.filter(b => b.category === category);
+            const earnedCount = badges.filter(b => b.earned).length;
+            return (
+              <div key={category} className="glass-card rounded-2xl p-6 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-on-surface flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[18px] text-primary">
+                      {category === 'Onboarding' ? 'spa' : category === 'Practice' ? 'sports_esports' : category === 'Readiness' ? 'analytics' : 'flag'}
+                    </span>
+                    {category}
+                  </h3>
+                  <span className="text-xs text-on-surface-variant font-medium">
+                    {earnedCount}/{badges.length} earned
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {badges.map(badge => (
+                    <div
+                      key={badge.id}
+                      className={`relative p-4 rounded-2xl border flex flex-col items-center text-center gap-2 transition-all ${
+                        badge.earned
+                          ? 'border-2 shadow-sm hover:shadow-md'
+                          : 'border border-outline-variant/50 opacity-50 grayscale'
+                      }`}
+                      style={badge.earned ? { borderColor: `${badge.color}55`, background: `${badge.color}08` } : {}}
+                    >
+                      {/* Badge Icon */}
+                      <div
+                        className={`w-14 h-14 rounded-full flex items-center justify-center transition-all ${
+                          badge.earned ? 'shadow-sm' : 'bg-surface-container-high'
+                        }`}
+                        style={badge.earned ? { background: `${badge.color}22`, border: `2px solid ${badge.color}66` } : {}}
+                      >
+                        <span
+                          className="material-symbols-outlined text-[26px]"
+                          style={{ color: badge.earned ? badge.color : '#888' }}
+                        >
+                          {badge.earned ? badge.icon : 'lock'}
+                        </span>
+                      </div>
+
+                      {/* Badge Info */}
+                      <div>
+                        <p className={`text-[11px] font-bold ${badge.earned ? 'text-on-surface' : 'text-on-surface-variant'}`}>
+                          {badge.name}
+                        </p>
+                        <p className="text-[10px] text-on-surface-variant mt-0.5 leading-snug">
+                          {badge.earned ? badge.desc : badge.desc}
+                        </p>
+                      </div>
+
+                      {/* Earned date or locked label */}
+                      {badge.earned ? (
+                        <span
+                          className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider"
+                          style={{ background: `${badge.color}22`, color: badge.color }}
+                        >
+                          {badge.earnedDate}
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-surface-container-high text-on-surface-variant">
+                          Keep going!
+                        </span>
+                      )}
+
+                      {/* Glow effect for earned */}
+                      {badge.earned && (
+                        <div
+                          className="absolute inset-0 rounded-2xl opacity-0 hover:opacity-100 transition-opacity"
+                          style={{ boxShadow: `0 0 20px ${badge.color}33`, pointerEvents: 'none' }}
+                        />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Encouragement Banner */}
+          <div className="p-4 rounded-2xl bg-secondary-container/20 border border-secondary/20 flex items-center gap-3">
+            <span className="material-symbols-outlined text-secondary text-[28px] shrink-0">local_fire_department</span>
+            <div>
+              <p className="text-sm font-bold text-on-surface">Keep the momentum going!</p>
+              <p className="text-xs text-on-surface-variant mt-0.5">
+                Complete more workplace simulations and build your evidence to unlock the remaining {BADGE_DEFINITIONS.filter(b => !b.earned).length} badges.
+              </p>
+            </div>
+            <button
+              onClick={() => setActiveTab('practice')}
+              className="ml-auto px-4 py-2 rounded-xl bg-secondary text-on-secondary font-bold text-xs hover:opacity-90 transition-all shrink-0 flex items-center gap-1.5"
+            >
+              <span className="material-symbols-outlined text-[16px]">play_arrow</span>
+              Practise Now
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ================= TAB 7: PROFILE ================= */}
       {activeTab === 'profile' && (
         <div className="space-y-6 animate-fadeIn">
           <div className="glass-card rounded-2xl p-6 border border-primary-fixed space-y-4">

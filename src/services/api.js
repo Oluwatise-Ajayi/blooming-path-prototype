@@ -55,10 +55,10 @@ export const api = {
     }),
 
   // Real-time per-answer AI feedback during onboarding
-  getOnboardingFeedback: (question, answer, question_index) =>
+  getOnboardingFeedback: (question, answer, question_index, previous_tentative_track_id = null) =>
     request('/onboarding/ai-feedback', {
       method: 'POST',
-      body: { question, answer, question_index },
+      body: { question, answer, question_index, previous_tentative_track_id },
     }),
 
   // Pathways
