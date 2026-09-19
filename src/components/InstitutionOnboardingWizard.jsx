@@ -1,24 +1,69 @@
 import React, { useState } from 'react';
 
-export default function InstitutionOnboardingWizard({ userEmail, onComplete, onBack }) {
-  // Classification State
-  const [institutionType, setInstitutionType] = useState('council');
-  const [ukprn, setUkprn] = useState('10048291');
-  const [region, setRegion] = useState('West Midlands Combined Authority (WMCA)');
+export default function InstitutionOnboardingWizard({ userEmail, onComplete, onBack, partnerOrg }) {
+  // Resolve org-specific theming
+  const orgName = partnerOrg?.name || 'Your Organisation';
+  const orgColor = partnerOrg?.color || null; // null = use primary (theme default)
+  const orgIcon = partnerOrg?.icon || 'account_balance';
+  const orgContact = partnerOrg?.contact || 'Marcus Thorne';
+  const orgEmail = partnerOrg?.email || 'cabinet-partners@bloomingpath.gov.uk';
+  const orgType = partnerOrg?.type || 'council';
+  const orgRegion = partnerOrg?.region || 'West Midlands Combined Authority (WMCA)';
+  const orgFocus = partnerOrg?.focus || '';
 
-  // Funding Stream State
-  const [fundingStream, setFundingStream] = useState('UK Shared Prosperity Fund (UKSPF) - People & Skills');
-  const [grantRef, setGrantRef] = useState('UKSPF-WMCA-2024-C88');
+  // Helper for org-coloured inline styles
+  const orgStyle = (opacity = 1) => orgColor ? { color: orgColor } : {};
+  const orgBgStyle = (alpha = '18') => orgColor ? { background: `${orgColor}${alpha}` } : {};
+  const orgBorderStyle = (alpha = '44') => orgColor ? { borderColor: `${orgColor}${alpha}` } : {};
+  // Classification State — pre-fill from partner org where possible
+  const inferredType = partnerOrg?.id === 'yemk-property' ? 'dwp_partner'
+    : partnerOrg?.id === 'rccg-cra' ? 'cic'
+    : partnerOrg?.id === 'fresh-hope' ? 'cic'
+    : partnerOrg?.id === 'royale-ng' ? 'cic'
+    : 'council';
+  const [institutionType, setInstitutionType] = useState(inferredType);
+  const [ukprn, setUkprn] = useState(
+    partnerOrg?.id === 'yemk-property' ? '10081347'
+    : partnerOrg?.id === 'rccg-cra' ? '10072481'
+    : partnerOrg?.id === 'fresh-hope' ? '10069203'
+    : partnerOrg?.id === 'royale-ng' ? '10074892'
+    : '10048291'
+  );
+  const [region, setRegion] = useState(orgRegion);
+
+  // Funding Stream State — pre-fill based on org type
+  const inferredFunding = partnerOrg?.id === 'rccg-cra' || partnerOrg?.id === 'fresh-hope'
+    ? 'National Lottery Community Fund (Building Better Opportunities)'
+    : partnerOrg?.id === 'yemk-property' || partnerOrg?.id === 'royale-ng'
+    ? 'UK Shared Prosperity Fund (UKSPF) - People & Skills'
+    : 'UK Shared Prosperity Fund (UKSPF) - People & Skills';
+  const [fundingStream, setFundingStream] = useState(inferredFunding);
+  const [grantRef, setGrantRef] = useState(
+    partnerOrg?.id === 'yemk-property' ? 'UKSPF-GLA-2024-Y22'
+    : partnerOrg?.id === 'rccg-cra' ? 'NLCF-BBO-WMCA-2024-R09'
+    : partnerOrg?.id === 'fresh-hope' ? 'NLCF-BBO-GMCA-2024-F14'
+    : partnerOrg?.id === 'royale-ng' ? 'UKSPF-GLA-2024-RNG5'
+    : 'UKSPF-WMCA-2024-C88'
+  );
   const [fundingCycle, setFundingCycle] = useState('2024-2026 Multi-Year Allocation');
-  const [grantAllocation, setGrantAllocation] = useState('480,000');
+  const [grantAllocation, setGrantAllocation] = useState(
+    partnerOrg?.id === 'rccg-cra' || partnerOrg?.id === 'fresh-hope' ? '95,000'
+    : partnerOrg?.id === 'yemk-property' ? '120,000'
+    : partnerOrg?.id === 'royale-ng' ? '85,000'
+    : '480,000'
+  );
 
-  // Demographics Tags
-  const [demographics, setDemographics] = useState([
-    'Women Returners',
-    'Career Changers',
-    'Neurodivergent Individuals',
-    'Long-term Unemployed (18-24 NEET)'
-  ]);
+  // Demographics Tags — pre-populated per org
+  const inferredDemographics = partnerOrg?.id === 'rccg-cra'
+    ? ['Refugees & Asylum Seekers', 'Long-term Unemployed', 'Women Returners', 'Faith Community Members']
+    : partnerOrg?.id === 'fresh-hope'
+    ? ['Newly Arrived Refugees', 'Women Returners', 'Digitally Excluded Adults', 'Lone Parents']
+    : partnerOrg?.id === 'royale-ng'
+    ? ['African & Caribbean Diaspora', 'Career Changers', 'Young Adults (18-30)', 'First-generation Professionals']
+    : partnerOrg?.id === 'yemk-property'
+    ? ['Migrant Workers', 'Vocational Skills Seekers', 'Women Returners', 'Facilities & Property Trainees']
+    : ['Women Returners', 'Career Changers', 'Neurodivergent Individuals', 'Long-term Unemployed (18-24 NEET)'];
+  const [demographics, setDemographics] = useState(inferredDemographics);
   const [isAddingTag, setIsAddingTag] = useState(false);
   const [newTagText, setNewTagText] = useState('');
 
@@ -97,17 +142,21 @@ export default function InstitutionOnboardingWizard({ userEmail, onComplete, onB
           {/* Left: Logo & Context Tag */}
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-primary-container flex items-center justify-center text-on-primary shadow-sm">
-                <span className="material-symbols-outlined text-2xl">account_balance</span>
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center text-on-primary shadow-sm"
+                style={orgColor ? { background: orgColor } : { background: 'var(--color-primary-container)' }}
+              >
+                <span className="material-symbols-outlined text-2xl">{orgIcon}</span>
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="text-lg font-bold text-primary tracking-tight leading-tight">BloomingPath</span>
-                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-surface-container text-primary border border-outline-variant/40 uppercase tracking-wider">
-                    Institutional
+                  <span className="text-lg font-bold tracking-tight leading-tight"
+                    style={orgStyle()}>
+                    {partnerOrg ? orgName : 'BloomingPath'}
                   </span>
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-surface-container border border-outline-variant/40 uppercase tracking-wider"
+                    style={orgStyle()}>Institutional</span>
                 </div>
-                <p className="text-xs text-on-surface-variant">UK Partner Onboarding Portal</p>
+                <p className="text-xs text-on-surface-variant">UK Partner Onboarding Portal — powered by BloomingPath</p>
               </div>
             </div>
           </div>
@@ -132,7 +181,7 @@ export default function InstitutionOnboardingWizard({ userEmail, onComplete, onB
               </button>
             )}
             <button 
-              onClick={() => alert('Public Sector Institutional Support desk: cabinet-partners@bloomingpath.gov.uk | +44 020 7946 0912')}
+              onClick={() => alert(`${orgName} Support: ${orgEmail} | BloomingPath Institutional Support desk`)}
               className="flex items-center gap-2 px-3.5 py-2 rounded-lg text-on-surface-variant hover:text-primary hover:bg-surface-container transition-colors text-xs font-semibold border border-outline-variant/40 bg-surface-container-lowest shadow-sm" 
               type="button"
             >
@@ -195,15 +244,37 @@ export default function InstitutionOnboardingWizard({ userEmail, onComplete, onB
           <section className="lg:col-span-8 space-y-6">
             
             {/* Header Banner */}
-            <div className="bg-surface-container-lowest rounded-xl p-6 border border-outline-variant/50 shadow-sm">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-surface-container text-primary text-xs font-semibold mb-3">
-                <span className="material-symbols-outlined text-base">assured_workload</span>
-                Statutory Public Sector &amp; DWP Grant Compliance
+            <div className="rounded-xl p-6 border shadow-sm"
+              style={{ background: orgColor ? `${orgColor}08` : 'var(--color-surface-container-lowest)', borderColor: orgColor ? `${orgColor}44` : 'var(--color-outline-variant)' }}
+            >
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold mb-3"
+                style={{ background: orgColor ? `${orgColor}15` : 'var(--color-surface-container)', color: orgColor || 'var(--color-primary)' }}
+              >
+                <span className="material-symbols-outlined text-base">{orgIcon}</span>
+                {orgName} — BloomingPath Partner Registration
               </div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-on-surface mb-2 tracking-tight">Set Up Your Institutional Mandate</h1>
+              <h1 className="text-2xl sm:text-3xl font-bold text-on-surface mb-2 tracking-tight">Set Up Your Organisation Mandate</h1>
               <p className="text-sm text-on-surface-variant leading-relaxed">
-                Configure funding streams, delivery cohorts, and statutory reporting frameworks to evidence employment outcomes for your local authority or education partnership.
+                {partnerOrg
+                  ? `Configure ${orgName}'s partnership settings, cohort focus areas, and compliance declarations to start connecting your community to BloomingPath's employment pathways.`
+                  : 'Configure funding streams, delivery cohorts, and statutory reporting frameworks to evidence employment outcomes for your local authority or education partnership.'
+                }
               </p>
+              {partnerOrg && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold border"
+                    style={{ background: `${orgColor}12`, color: orgColor, borderColor: `${orgColor}44` }}
+                  >
+                    <span className="material-symbols-outlined text-[12px] align-middle mr-0.5">location_on</span>
+                    {orgRegion.split('(')[0].trim()}
+                  </span>
+                  {orgFocus.split(',').slice(0, 2).map(f => (
+                    <span key={f} className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-surface-container text-on-surface-variant border border-outline-variant/40">
+                      {f.trim()}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Section 1: UK Institutional Classification */}
@@ -629,26 +700,30 @@ export default function InstitutionOnboardingWizard({ userEmail, onComplete, onB
               </div>
             </div>
 
-            {/* Dedicated Account Director Card */}
+            {/* Dedicated Account Director / Partner Contact Card */}
             <div className="bg-surface-container-lowest rounded-xl p-5 border border-outline-variant/50 shadow-sm flex items-start gap-3.5">
-              <img 
-                className="w-12 h-12 rounded-full object-cover border border-outline-variant" 
-                alt="Marcus Thorne, UK Public Sector Partnerships Advisor"
-                src="https://lh3.googleusercontent.com/aida-public/AB6AXuBnvzzf-ow04VDdVRkH43uHte09tVebyc7OkjtQXSDvQjj7O8u-z_p8LvVwPNg3JRaY6yvOg7nQLsV6zjizDbwScerB-v38S8D_Rw6puxHxvCbv6kPAb0SX5EL_YLs2mqLodu7Vylt3UghvzHJacIF52l-ulwlGqcHXFlhmmw44TJgBpMmqCXrQheVjMdfK4Co9ZzkflXDZmSE58MtJHqHZHkudkBoXzDEIJ9fz7aRXqAHR-RClMcwb4w"
-              />
+              <div
+                className="w-12 h-12 rounded-full flex items-center justify-center border border-outline-variant shrink-0"
+                style={orgColor ? { background: `${orgColor}18` } : { background: 'var(--color-surface-container)' }}
+              >
+                <span className="material-symbols-outlined text-[24px]" style={orgStyle()}>{orgIcon}</span>
+              </div>
               <div className="space-y-1">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-bold text-on-surface">Marcus Thorne</span>
-                  <span className="px-1.5 py-0.5 rounded text-[10px] bg-surface-container-high text-primary font-bold">Cabinet Lead</span>
+                  <span className="text-xs font-bold text-on-surface">{orgContact}</span>
+                  <span className="px-1.5 py-0.5 rounded text-[10px] bg-surface-container-high font-bold" style={orgStyle()}>Partner Lead</span>
                 </div>
-                <p className="text-[11px] text-on-surface-variant leading-tight">Your Assigned Public Sector Advisor</p>
-                <a 
-                  className="inline-flex items-center gap-1 text-xs text-primary font-bold hover:underline pt-1" 
-                  href="mailto:marcus.thorne@bloomingpath.gov.uk"
-                  onClick={(e) => { e.preventDefault(); alert('Briefing scheduled request sent to marcus.thorne@bloomingpath.gov.uk'); }}
+                <p className="text-[11px] text-on-surface-variant leading-tight">
+                  {partnerOrg ? `${orgName} — BloomingPath Partnership Coordinator` : 'Your Assigned Public Sector Advisor'}
+                </p>
+                <a
+                  className="inline-flex items-center gap-1 text-xs font-bold hover:underline pt-1"
+                  href={`mailto:${orgEmail}`}
+                  style={orgStyle()}
+                  onClick={(e) => { e.preventDefault(); alert(`Partnership enquiry sent to ${orgEmail}`); }}
                 >
                   <span className="material-symbols-outlined text-xs">mail</span>
-                  Schedule Council Briefing
+                  {partnerOrg ? 'Contact Partnership Team' : 'Schedule Council Briefing'}
                 </a>
               </div>
             </div>
@@ -661,9 +736,11 @@ export default function InstitutionOnboardingWizard({ userEmail, onComplete, onB
       <footer className="bg-surface-container-lowest border-t border-outline-variant/40 mt-12 py-6">
         <div className="max-w-7xl mx-auto px-6 lg:px-10 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-on-surface-variant">
           <div className="flex items-center gap-3 flex-wrap">
-            <span className="font-bold text-primary">BloomingPath Institutional Portal</span>
+            <span className="font-bold" style={orgStyle()}>
+              {partnerOrg ? `${orgName} × BloomingPath` : 'BloomingPath Institutional Portal'}
+            </span>
             <span>•</span>
-            <span>HM Government Crown Commercial Service Supplier</span>
+            <span>Powered by BloomingPath Employment Intelligence</span>
             <span>•</span>
             <span>Cyber Essentials Plus Certified</span>
           </div>

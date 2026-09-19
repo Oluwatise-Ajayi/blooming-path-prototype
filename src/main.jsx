@@ -19,6 +19,7 @@ function App() {
   const [activeRole, setActiveRole] = useState('individual'); // 'individual', 'employer', 'institution', 'admin'
   const [isOnboardingNewUser, setIsOnboardingNewUser] = useState(false);
   const [onboardingRole, setOnboardingRole] = useState('individual'); // 'individual', 'employer', 'institution'
+  const [partnerOrg, setPartnerOrg] = useState(null); // selected institution partner org
 
   // App Settings State
   const [currentLang, setCurrentLang] = useState('en'); // 'en', 'ar', 'fr'
@@ -41,9 +42,10 @@ function App() {
   };
 
   // Handle New Registration -> Launch appropriate Onboarding
-  const handleStartNewOnboarding = (email, name, role = 'individual') => {
+  const handleStartNewOnboarding = (email, name, role = 'individual', selectedPartnerOrg = null) => {
     setUserEmail(email || 'user@bloomingpath.com');
     setOnboardingRole(role);
+    setPartnerOrg(selectedPartnerOrg || null);
     setIsAuthenticated(true);
     setIsOnboardingNewUser(true);
   };
@@ -101,6 +103,7 @@ function App() {
         ) : onboardingRole === 'institution' ? (
           <InstitutionOnboardingWizard
             userEmail={userEmail}
+            partnerOrg={partnerOrg}
             onComplete={handleCompleteInstitutionOnboarding}
             onBack={() => {
               setIsAuthenticated(false);
